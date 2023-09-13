@@ -6,11 +6,26 @@ pub enum ContractError {
   #[error("{0}")]
   Std(#[from] StdError),
 
+  #[error("GenericError: {reason:?}")]
+  GenericError { reason: String },
+
+  #[error("ContractNotFound: {reason:?}")]
+  ContractNotFound { reason: String },
+
+  #[error("UnexpectedError: {reason:?}")]
+  UnexpectedError { reason: String },
+
+  #[error("JobNotFound: {reason:?}")]
+  JobNotFound { reason: String },
+
   #[error("NotAuthorized: {reason:?}")]
   NotAuthorized { reason: String },
 
   #[error("ValidationError: {reason:?}")]
   ValidationError { reason: String },
+
+  #[error("CreateError: {reason:?}")]
+  CreateError { reason: String },
 }
 
 impl From<ContractError> for StdError {
