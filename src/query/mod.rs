@@ -1,5 +1,4 @@
-mod read;
-mod select;
+mod metadata;
+pub mod read;
 
-pub use read::read;
-pub use select::select;
+pub use metadata::metadata;

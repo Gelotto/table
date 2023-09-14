@@ -11,5 +11,5 @@ pub fn on_execute(
 ) -> Result<Response, ContractError> {
   config.validate(deps.api)?;
   save_config(deps.storage, &config)?;
-  Ok(Response::new().add_attribute("action", "config"))
+  Ok(Response::new().add_attribute("action", "config_update"))
 }

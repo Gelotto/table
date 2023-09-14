@@ -1,54 +1,34 @@
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-use crate::msg::{Cursor, IndexName, QueryParams, SearchResponse};
+use crate::msg::{Cursor, IndexName, IndexQueryParams, ReadIndexResponse};
 use crate::state::{
-  CONTRACT_ID_2_ADDR, INDEX_CODE_ID, INDEX_CONTRACT_ID, INDEX_CREATED_AT, INDEX_CREATED_BY, INDEX_REV,
-  INDEX_UPDATED_AT, INDEX_UPDATED_BY,
+  CONTRACT_ID_2_ADDR, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY,
 };
-use crate::{error::ContractError, msg::Query};
+use crate::util::{parse, parse_bool};
+use crate::{error::ContractError, msg::ReadIndexParams};
 use cosmwasm_std::{Addr, Api, Deps, Order, StdResult, Storage, Uint64};
 use cw_storage_plus::{Bound, KeyDeserialize, Map, Prefixer, PrimaryKey};
 
-pub fn read(
+pub fn read_index(
   deps: Deps,
-  query: Query,
-) -> Result<SearchResponse, ContractError> {
+  query: ReadIndexParams,
+) -> Result<ReadIndexResponse, ContractError> {
   // let limit = query.limit.unwrap_or(20).clamp(1, 200) as usize;
   // let desc = query.desc.unwrap_or(false);
 
   // Find matching contract ID's
   let (ids, cursor) = match query.params.clone() {
-    QueryParams::Equals(value) => read_index(deps.api, deps.storage, query, Some(value), None, true),
-    QueryParams::Between(range) => read_index(deps.api, deps.storage, query, range.start, range.stop, false),
-    // QueryParams::Tags(tags) => todo!(),
+    IndexQueryParams::Equals(value) => get_contract_ids(deps.api, deps.storage, query, Some(value), None, true),
+    IndexQueryParams::Between(range) => get_contract_ids(deps.api, deps.storage, query, range.start, range.stop, false),
   }?;
 
   // Convert contract ID's to Addrs
   let addresses = load_contract_addresses(deps.storage, &ids)?;
 
-  Ok(SearchResponse {
+  Ok(ReadIndexResponse {
     contracts: addresses,
     cursor,
-  })
-}
-
-fn parse<T: FromStr>(v_str: String) -> Result<T, ContractError> {
-  match v_str.parse::<T>() {
-    Ok(v) => Ok(v),
-    Err(_) => Err(ContractError::ValidationError {
-      reason: format!("cannot parse value: {}", v_str),
-    }),
-  }
-}
-
-fn parse_bool(s: String) -> Result<u8, ContractError> {
-  Ok(if s == "true" {
-    1
-  } else if s == "false" {
-    0
-  } else {
-    parse(s)?
   })
 }
 
@@ -207,10 +187,10 @@ where
   Ok((contract_ids, cursor))
 }
 
-fn read_index(
+fn get_contract_ids(
   _api: &dyn Api,
   storage: &dyn Storage,
-  query: Query,
+  query: ReadIndexParams,
   raw_start: Option<String>,
   raw_stop: Option<String>,
   exact: bool,
@@ -222,43 +202,43 @@ fn read_index(
 
   Ok(match &query.index {
     IndexName::Id => {
-      let index = INDEX_CONTRACT_ID;
+      let index = IX_CONTRACT_ID;
       let (start, stop) = build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
     IndexName::CodeId => {
-      let index = INDEX_CODE_ID;
+      let index = IX_CODE_ID;
       let (start, stop) = build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
     IndexName::Rev => {
-      let index = INDEX_REV;
+      let index = IX_REV;
       let (start, stop) = build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
     IndexName::CreatedAt => {
-      let index = INDEX_CREATED_AT;
+      let index = IX_CREATED_AT;
       let (start, stop) = build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
     IndexName::UpdatedAt => {
-      let index = INDEX_UPDATED_AT;
+      let index = IX_UPDATED_AT;
       let (start, stop) = build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
     IndexName::CreatedBy => {
-      let index = INDEX_CREATED_BY;
+      let index = IX_CREATED_BY;
       let (start, stop) = build_start_stop_values_str(raw_start, raw_stop, exact)?;
       let (min, max) = build_range_bounds_str(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
     IndexName::UpdatedBy => {
-      let index = INDEX_UPDATED_BY;
+      let index = IX_UPDATED_BY;
       let (start, stop) = build_start_stop_values_str(raw_start, raw_stop, exact)?;
       let (min, max) = build_range_bounds_str(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?

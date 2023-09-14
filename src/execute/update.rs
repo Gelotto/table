@@ -1,9 +1,11 @@
 use crate::{
   error::ContractError,
+  models::DynamicContractMetadata,
   msg::{IndexType, KeyValue, TagUpdates, UpdateParams},
   state::{
-    load_contract_id, DYNAMIC_METADATA, INDEXED_KEYS, INDEX_REV, INDEX_TAG, INDEX_UPDATED_AT, INDEX_UPDATED_BY,
-    METADATA, VALUES_BOOL, VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8, X,
+    decrement_tag_count, ensure_contract_not_suspended, ensure_owner_auth, increment_tag_count, load_contract_id,
+    CONTRACT_DYN_METADATA, CONTRACT_METADATA, INDEXED_KEYS, IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, VALUES_BOOL,
+    VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8, X,
   },
 };
 use cosmwasm_std::{attr, Addr, DepsMut, Env, MessageInfo, Response, Storage, Timestamp, Uint128, Uint64};
@@ -15,21 +17,37 @@ pub fn on_execute(
   info: MessageInfo,
   params: UpdateParams,
 ) -> Result<Response, ContractError> {
+  let action = "update";
+
+  // Get address of contract whose state we will update. If sender isn't the
+  // contract itself, only allow sender if auth'd by owner address or ACL.
+  let contract_addr = if let Some(contract_addr) = params.contract {
+    ensure_owner_auth(deps.storage, deps.querier, &info.sender, action)?;
+    deps.api.addr_validate(contract_addr.as_str())?
+  } else {
+    info.sender
+  };
+
+  ensure_contract_not_suspended(deps.storage, &contract_addr)?;
+
   deps.api.addr_validate(params.initiator.as_str())?;
 
+  let contract_id = load_contract_id(deps.storage, &contract_addr)?;
+  let partition = CONTRACT_METADATA.load(deps.storage, contract_id)?.partition;
   let initiator = params.initiator;
-  let contract_id = load_contract_id(deps.storage, &info.sender)?;
-  let partition = METADATA.load(deps.storage, contract_id)?.partition;
 
+  // Update built-in and custom indices
   if let Some(index_updates) = params.values {
     update_indices(deps.storage, partition, contract_id, index_updates)?;
     update_metadata(deps.storage, &env, partition, &initiator, contract_id)?;
   }
+
+  // Update tags
   if let Some(tag_updates) = params.tags {
     update_tags(deps.storage, partition, contract_id, tag_updates)?;
   }
 
-  Ok(Response::new().add_attributes(vec![attr("action", "update")]))
+  Ok(Response::new().add_attributes(vec![attr("action", action)]))
 }
 
 fn update_metadata(
@@ -39,8 +57,11 @@ fn update_metadata(
   initiator: &Addr,
   contract_id: u64,
 ) -> Result<(), ContractError> {
-  let meta = DYNAMIC_METADATA.update(storage, contract_id, |maybe_meta| -> Result<_, ContractError> {
+  let mut maybe_prev_meta: Option<DynamicContractMetadata> = None;
+
+  let meta = CONTRACT_DYN_METADATA.update(storage, contract_id, |maybe_meta| -> Result<_, ContractError> {
     if let Some(mut meta) = maybe_meta {
+      maybe_prev_meta = Some(meta.clone());
       meta.rev += Uint64::one();
       meta.time = env.block.time;
       meta.height = env.block.height.into();
@@ -48,14 +69,19 @@ fn update_metadata(
       Ok(meta)
     } else {
       Err(ContractError::UnexpectedError {
-        reason: "contract update metadata not found".to_owned(),
+        reason: "dynamic contract metadata not found".to_owned(),
       })
     }
   })?;
 
-  INDEX_REV.save(storage, (partition, meta.rev.into(), contract_id), &X)?;
-  INDEX_UPDATED_AT.save(storage, (partition, meta.time.nanos(), contract_id), &X)?;
-  INDEX_UPDATED_BY.save(storage, (partition, initiator.to_string(), contract_id), &X)?;
+  if let Some(prev_meta) = maybe_prev_meta {
+    IX_REV.remove(storage, (partition, prev_meta.rev.into(), contract_id));
+    IX_UPDATED_AT.remove(storage, (partition, prev_meta.time.nanos(), contract_id));
+  }
+
+  IX_REV.save(storage, (partition, meta.rev.into(), contract_id), &X)?;
+  IX_UPDATED_AT.save(storage, (partition, meta.time.nanos(), contract_id), &X)?;
+  IX_UPDATED_BY.save(storage, (partition, initiator.to_string(), contract_id), &X)?;
 
   Ok(())
 }
@@ -67,11 +93,15 @@ fn update_tags(
   updates: TagUpdates,
 ) -> Result<(), ContractError> {
   for tag in updates.remove.iter() {
-    INDEX_TAG.remove(storage, (partition, tag, contract_id));
+    IX_TAG.remove(storage, (partition, tag, contract_id));
+    decrement_tag_count(storage, partition, tag)?;
   }
+
   for tag in updates.add.iter() {
-    INDEX_TAG.save(storage, (partition, tag, contract_id), &X)?;
+    IX_TAG.save(storage, (partition, tag, contract_id), &X)?;
+    increment_tag_count(storage, partition, tag)?;
   }
+
   Ok(())
 }
 

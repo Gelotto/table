@@ -1,14 +1,16 @@
-use cosmwasm_std::{attr, Addr, DepsMut, Env, Event, MessageInfo, Reply, Response, Storage, SubMsg, Uint64, WasmMsg};
+use cosmwasm_std::{
+  attr, Addr, DepsMut, Env, Event, MessageInfo, Reply, Response, StdResult, Storage, SubMsg, Uint64, WasmMsg,
+};
 use cw_lib::utils::state::increment;
 
 use crate::{
   ensure::ensure_authorized_code_id,
   error::ContractError,
   models::{ContractMetadata, ReplyJob},
-  msg::CreateParams,
+  msg::CreationParams,
   state::{
-    load_next_contract_id, INDEX_CODE_ID, INDEX_CONTRACT_ID, INDEX_CREATED_AT, INDEX_CREATED_BY, INDEX_REV,
-    INDEX_UPDATED_AT, INDEX_UPDATED_BY, METADATA, REPLY_JOBS, REPLY_JOB_ID_COUNTER, X,
+    ensure_owner_auth, load_next_contract_id, CONTRACT_METADATA, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT,
+    IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, REPLY_JOBS, REPLY_JOB_ID_COUNTER, X,
   },
 };
 
@@ -16,9 +18,12 @@ pub fn on_execute(
   deps: DepsMut,
   env: Env,
   info: MessageInfo,
-  params: CreateParams,
+  params: CreationParams,
 ) -> Result<Response, ContractError> {
+  let action = "create";
+
   ensure_authorized_code_id(deps.storage, params.code_id.into())?;
+  ensure_owner_auth(deps.storage, deps.querier, &info.sender, action)?;
 
   let initiator = &info.sender;
   let job_id = create_reply_job(deps.storage, &params, initiator)?;
@@ -27,7 +32,7 @@ pub fn on_execute(
 
   Ok(
     Response::new()
-      .add_attributes(vec![attr("action", "create"), attr("job_id", job_id.to_string())])
+      .add_attributes(vec![attr("action", action), attr("job_id", job_id.to_string())])
       .add_submessage(SubMsg::reply_always(
         WasmMsg::Instantiate {
           code_id: params.code_id.into(),
@@ -43,7 +48,7 @@ pub fn on_execute(
 
 fn create_reply_job(
   storage: &mut dyn Storage,
-  msg: &CreateParams,
+  msg: &CreationParams,
   initiator: &Addr,
 ) -> Result<u64, ContractError> {
   let job_id: u64 = increment(storage, &REPLY_JOB_ID_COUNTER, Uint64::one())?.into();
@@ -59,7 +64,7 @@ pub fn on_reply(
   deps: DepsMut,
   env: Env,
   reply: Reply,
-  params: CreateParams,
+  params: CreationParams,
   initiator: Addr,
 ) -> Result<Response, ContractError> {
   let mut resp = Response::new();
@@ -82,17 +87,21 @@ pub fn on_reply(
             partition: params.partition,
           };
 
-          let partition = params.partition;
+          let p = params.partition;
 
-          METADATA.save(deps.storage, contract_id, &metadata)?;
+          CONTRACT_METADATA.save(deps.storage, contract_id, &metadata)?;
 
-          INDEX_CONTRACT_ID.save(deps.storage, (partition, contract_id, contract_id), &X)?;
-          INDEX_CODE_ID.save(deps.storage, (partition, params.code_id.into(), contract_id), &X)?;
-          INDEX_REV.save(deps.storage, (partition, 1, contract_id), &X)?;
-          INDEX_CREATED_BY.save(deps.storage, (partition, initiator.to_string(), contract_id), &X)?;
-          INDEX_UPDATED_BY.save(deps.storage, (partition, initiator.to_string(), contract_id), &X)?;
-          INDEX_CREATED_AT.save(deps.storage, (partition, env.block.time.nanos(), contract_id), &X)?;
-          INDEX_UPDATED_AT.save(deps.storage, (partition, env.block.time.nanos(), contract_id), &X)?;
+          PARTITION_SIZES.update(deps.storage, p, |maybe_n| -> StdResult<_> {
+            Ok(maybe_n.unwrap_or_default() + Uint64::one())
+          })?;
+
+          IX_CONTRACT_ID.save(deps.storage, (p, contract_id, contract_id), &X)?;
+          IX_CODE_ID.save(deps.storage, (p, params.code_id.into(), contract_id), &X)?;
+          IX_REV.save(deps.storage, (p, 1, contract_id), &X)?;
+          IX_CREATED_BY.save(deps.storage, (p, initiator.to_string(), contract_id), &X)?;
+          IX_UPDATED_BY.save(deps.storage, (p, initiator.to_string(), contract_id), &X)?;
+          IX_CREATED_AT.save(deps.storage, (p, env.block.time.nanos(), contract_id), &X)?;
+          IX_UPDATED_AT.save(deps.storage, (p, env.block.time.nanos(), contract_id), &X)?;
 
           resp = resp.add_event(
             Event::new("post_create")

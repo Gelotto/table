@@ -17,5 +17,5 @@ pub fn on_execute(
     save_config(deps.storage, &prev_config)?;
   }
 
-  Ok(Response::new().add_attribute("action", "restore"))
+  Ok(Response::new().add_attribute("action", "config_revert"))
 }

@@ -1,7 +1,16 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Timestamp, Uint64};
 
-use crate::msg::CreateParams;
+use crate::msg::CreationParams;
+
+#[cw_serde]
+pub struct ContractFlag {
+  pub sender: Addr,
+  pub reason: Option<String>,
+  pub code: Option<u32>,
+  pub height: Uint64,
+  pub time: Timestamp,
+}
 
 #[cw_serde]
 pub struct ContractMetadata {
@@ -24,5 +33,5 @@ pub struct DynamicContractMetadata {
 
 #[cw_serde]
 pub enum ReplyJob {
-  Create { params: CreateParams, initiator: Addr },
+  Create { params: CreationParams, initiator: Addr },
 }

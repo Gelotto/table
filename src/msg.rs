@@ -12,42 +12,77 @@ pub struct InstantiateMsg {
 }
 
 #[cw_serde]
-pub enum SudoMsg {
-  Config(Config),
+pub enum ConfigMsg {
+  Update(Config),
   Revert(),
 }
 
 #[cw_serde]
+pub struct FlagParams {
+  pub contract: Addr,
+  pub suspend: Option<bool>,
+  pub reason: Option<String>,
+  pub code: Option<u32>,
+}
+
+#[cw_serde]
 pub enum ExecuteMsg {
-  Sudo(SudoMsg),
-  Create(CreateParams),
+  Config(ConfigMsg),
+  Create(CreationParams),
   Update(UpdateParams),
+  Delete(Addr),
   Move(Addr, u16),
+  Flag(FlagParams),
+  Unsuspend(Addr),
+  CreateIndex(IndexCreationParams),
+  DeleteIndex(String),
+}
+
+#[cw_serde]
+pub enum ReadMsg {
+  Index(ReadIndexParams),
+  Tags(ReadTagsParams),
+  Relationships(ReadRelationshipsParams),
 }
 
 #[cw_serde]
 pub enum QueryMsg {
-  Info {
-    fields: Option<Vec<String>>,
-    account: Option<Addr>,
-  },
-  Read(Query),
+  Metadata {},
+  Read(ReadMsg),
 }
 
 #[cw_serde]
 pub struct MigrateMsg {}
 
 #[cw_serde]
-pub struct SelectResponse {}
+pub struct MetadataResponse {}
 
 #[cw_serde]
-pub struct SearchResponse {
+pub struct ReadIndexResponse {
   pub contracts: Vec<Addr>,
   pub cursor: Option<Cursor>,
 }
 
 #[cw_serde]
-pub struct CreateParams {
+pub struct ReadTagsResponse {
+  pub contracts: Vec<Vec<Addr>>,
+  pub cursors: Vec<Option<Uint64>>,
+}
+
+#[cw_serde]
+pub struct Relationship {
+  pub rel: String,
+  pub address: Addr,
+}
+
+#[cw_serde]
+pub struct ReadRelationshipsResponse {
+  pub relationships: Vec<Relationship>,
+  pub cursor: Option<(String, String)>,
+}
+
+#[cw_serde]
+pub struct CreationParams {
   pub code_id: Uint64,
   pub instantiate_msg: Binary,
   pub label: Option<String>,
@@ -61,6 +96,7 @@ pub struct UpdateParams {
   pub initiator: Addr,
   pub values: Option<Vec<KeyValue>>,
   pub tags: Option<TagUpdates>,
+  pub contract: Option<Addr>,
 }
 
 #[cw_serde]
@@ -131,6 +167,12 @@ pub enum IndexType {
 }
 
 #[cw_serde]
+pub struct IndexMetadata {
+  pub index_type: IndexType,
+  pub name: String,
+}
+
+#[cw_serde]
 pub struct TagUpdates {
   pub remove: Vec<String>,
   pub add: Vec<String>,
@@ -159,17 +201,48 @@ pub struct Range {
 }
 
 #[cw_serde]
-pub enum QueryParams {
-  Equals(String),
-  Between(Range),
-  // Tags(Vec<String>),
+pub struct ReadTagsParams {
+  pub tags: Vec<String>,
+  pub cursors: Option<Vec<Uint64>>,
+  pub desc: Option<bool>,
+  pub limit: Option<u32>,
+  pub partition: u16,
 }
 
 #[cw_serde]
-pub struct Query {
+pub enum RelationshipSide {
+  Contract(Addr),
+  Account(Addr),
+}
+
+#[cw_serde]
+pub struct ReadRelationshipsParams {
+  pub side: RelationshipSide,
+  pub names: Option<Vec<String>>,
+  pub cursor: Option<(String, String)>,
+  pub desc: Option<bool>,
+  pub limit: Option<u32>,
+  pub partition: u16,
+}
+
+#[cw_serde]
+pub struct IndexCreationParams {
+  pub index_type: IndexType,
+  pub name: String,
+}
+
+#[cw_serde]
+pub enum IndexQueryParams {
+  Equals(String),
+  Between(Range),
+  // Tags(TagQueryParams),
+}
+
+#[cw_serde]
+pub struct ReadIndexParams {
   pub index: IndexName,
   pub partition: u16,
-  pub params: QueryParams,
+  pub params: IndexQueryParams,
   pub desc: Option<bool>,
   pub limit: Option<u32>,
   pub cursor: Option<Cursor>,

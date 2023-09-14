@@ -1,5 +1,9 @@
 pub mod config;
 pub mod create;
+pub mod create_index;
+pub mod delete;
+pub mod delete_index;
+pub mod flag;
 pub mod r#move;
-pub mod revert;
+pub mod unsuspend;
 pub mod update;
