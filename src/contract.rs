@@ -34,7 +34,6 @@ pub fn execute(
     ExecuteMsg::Create(params) => execute::create::on_execute(deps, env, info, params),
     ExecuteMsg::Update(params) => execute::update::on_execute(deps, env, info, params),
     ExecuteMsg::Delete(addr) => execute::delete::on_execute(deps, env, info, addr),
-    ExecuteMsg::Move(addr, partition) => execute::r#move::on_execute(deps, env, info, addr, partition),
     ExecuteMsg::Flag(params) => execute::flag::on_execute(deps, env, info, params),
     ExecuteMsg::Admin(msg) => match msg {
       AdminMsg::UpdateConfig(config) => execute::admin::update_config::on_execute(deps, env, info, config),
@@ -44,6 +43,8 @@ pub fn execute(
       AdminMsg::CreatePartition(params) => execute::admin::create_partition::on_execute(deps, env, info, params),
       AdminMsg::CreateIndex(params) => execute::admin::create_index::on_execute(deps, env, info, params),
       AdminMsg::DeleteIndex(name) => execute::admin::delete_index::on_execute(deps, env, info, name),
+      AdminMsg::Partition(addr, partition) => execute::admin::partition::on_execute(deps, env, info, addr, partition),
+      AdminMsg::Group(addr, updates) => execute::admin::group::on_execute(deps, env, info, addr, updates),
     },
   }
 }

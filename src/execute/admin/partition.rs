@@ -6,10 +6,10 @@ use crate::{
   msg::{IndexType, PartitionSelector},
   state::{
     decrement_tag_count, ensure_contract_not_suspended, ensure_is_authorized_owner, ensure_partition_exists,
-    increment_tag_count, load_contract_id, load_partition_id_from_selector, CONTRACT_DYN_METADATA,
-    CONTRACT_INDEXED_KEYS, CONTRACT_METADATA, CONTRACT_TAGS, IX_CODE_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_TAG,
-    IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, VALUES_BOOL, VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16,
-    VALUES_U32, VALUES_U64, VALUES_U8, X,
+    increment_tag_count, load_contract_id, resolve_partition_id, CONTRACT_DYN_METADATA, CONTRACT_INDEXED_KEYS,
+    CONTRACT_METADATA, CONTRACT_TAGS, IX_CODE_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_TAG, IX_UPDATED_AT,
+    IX_UPDATED_BY, PARTITION_SIZES, VALUES_BOOL, VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32,
+    VALUES_U64, VALUES_U8, X,
   },
   util::build_index_name,
 };
@@ -22,20 +22,16 @@ pub fn on_execute(
   contract_addr: Addr,
   dst_selector: PartitionSelector,
 ) -> Result<Response, ContractError> {
-  let action = "move";
+  let action = "partition";
+
   deps.api.addr_validate(contract_addr.as_str())?;
 
   ensure_contract_not_suspended(deps.storage, &contract_addr)?;
 
-  let dst_partition = load_partition_id_from_selector(deps.storage, dst_selector)?;
+  let dst_partition = resolve_partition_id(deps.storage, dst_selector)?;
 
   ensure_partition_exists(deps.storage, dst_partition)?;
-
-  // If sender isn't the contract itself, only allow sender if auth'd by owner
-  // address or ACL.
-  if contract_addr != info.sender {
-    ensure_is_authorized_owner(deps.storage, deps.querier, &info.sender, action)?;
-  };
+  ensure_is_authorized_owner(deps.storage, deps.querier, &info.sender, action)?;
 
   let contract_id = load_contract_id(deps.storage, &contract_addr)?;
   let meta = CONTRACT_METADATA.load(deps.storage, contract_id)?;

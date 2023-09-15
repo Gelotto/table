@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use crate::error::ContractError;
 use crate::msg::{PartitionResponse, PartitionSelector, TagCount};
-use crate::state::{load_partition_id_from_selector, PARTITION_METADATA, PARTITION_SIZES, PARTITION_TAG_COUNTS};
+use crate::state::{resolve_partition_id, PARTITION_METADATA, PARTITION_SIZES, PARTITION_TAG_COUNTS};
 use cosmwasm_std::{Deps, Order};
 use cw_storage_plus::Bound;
 
@@ -16,7 +16,7 @@ pub fn query_partition(
   deps: Deps,
   selector: PartitionSelector,
 ) -> Result<PartitionResponse, ContractError> {
-  let partition_id = load_partition_id_from_selector(deps.storage, selector)?;
+  let partition_id = resolve_partition_id(deps.storage, selector)?;
   let size = PARTITION_SIZES.load(deps.storage, partition_id).unwrap_or_default();
   let meta = PARTITION_METADATA.load(deps.storage, partition_id)?;
 

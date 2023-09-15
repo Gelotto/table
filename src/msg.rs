@@ -18,12 +18,20 @@ pub struct InstantiateMsg {
 #[cw_serde]
 pub enum AdminMsg {
   UpdateInfo(TableInfo),
+  Partition(Addr, PartitionSelector),
+  Group(Addr, GroupUpdates),
   UpdateConfig(Config),
   RevertConfig(),
   Unsuspend(Addr),
   CreatePartition(PartitionCreationParams),
   CreateIndex(IndexCreationParams),
   DeleteIndex(String),
+}
+
+#[cw_serde]
+pub struct GroupUpdates {
+  pub remove: Option<Vec<GroupSelector>>,
+  pub add: Option<Vec<GroupSelector>>,
 }
 
 #[cw_serde]
@@ -40,7 +48,6 @@ pub enum ExecuteMsg {
   Create(CreationParams),
   Update(UpdateParams),
   Delete(Addr),
-  Move(Addr, PartitionSelector),
   Flag(FlagParams),
 }
 
@@ -110,11 +117,14 @@ pub struct ReadRelationshipsResponse {
 
 #[cw_serde]
 pub struct CreationParams {
+  // Downstream instantiation params
   pub code_id: Uint64,
   pub instantiate_msg: Binary,
-  pub label: Option<String>,
   pub admin: Option<Addr>,
-  pub partition: u16,
+  // Internal contract params
+  pub partition: PartitionSelector,
+  pub label: Option<String>,
+  pub groups: Option<Vec<GroupSelector>>,
   pub tags: Option<Vec<String>>,
 }
 
@@ -237,9 +247,15 @@ pub enum GroupSelector {
 
 #[cw_serde]
 pub struct GroupMetadata {
-  pub id: Uint64,
+  pub id: u32,
   pub description: Option<String>,
   pub size: Uint64,
+}
+
+#[cw_serde]
+pub struct GroupCreationParams {
+  pub name: Option<String>,
+  pub description: Option<String>,
 }
 
 impl Config {

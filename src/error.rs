@@ -21,6 +21,9 @@ pub enum ContractError {
   #[error("PartitionNotFound: {reason:?}")]
   PartitionNotFound { reason: String },
 
+  #[error("GroupNotFound: {reason:?}")]
+  GroupNotFound { reason: String },
+
   #[error("NotAuthorized: {reason:?}")]
   NotAuthorized { reason: String },
 

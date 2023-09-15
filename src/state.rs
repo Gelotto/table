@@ -1,6 +1,6 @@
 use crate::models::{ContractMetadataView, ContractMetadataViewDetails, DynamicContractMetadata, ReplyJob, Verbosity};
 use crate::msg::{
-  Config, ContractRecord, GroupMetadata, IndexMetadata, IndexType, InstantiateMsg, PartitionMetadata,
+  Config, ContractRecord, GroupMetadata, GroupSelector, IndexMetadata, IndexType, InstantiateMsg, PartitionMetadata,
   PartitionSelector, TableInfo,
 };
 use crate::{error::ContractError, models::ContractMetadata};
@@ -72,7 +72,11 @@ pub const PARTITION_SIZES: Map<PartitionID, Uint64> = Map::new("partition_sizes"
 pub const PARTITION_TAG_COUNTS: Map<(PartitionID, &String), u32> = Map::new("partition_tag_counts");
 
 // Partition metadata
-pub const GROUP_METADATA: Map<String, GroupMetadata> = Map::new("group_metadata");
+pub const GROUP_METADATA: Map<GroupID, GroupMetadata> = Map::new("group_metadata");
+
+// Group ID counter and name mapper.
+pub const GROUP_ID_COUNTER: Item<GroupID> = Item::new("group_id_counter");
+pub const GROUP_NAME_2_ID: Map<String, GroupID> = Map::new("group_name_2_id");
 
 // Lookup table for finding names/keys of indexed values for a given contract ID
 pub const CONTRACT_INDEXED_KEYS: Map<(ContractID, &String), IndexType> = Map::new("contract_indexed_keys");
@@ -89,6 +93,10 @@ pub const IX_UPDATED_AT: IndexMap<(PartitionID, u64, ContractID)> = Map::new("ix
 pub const IX_UPDATED_BY: IndexMap<(PartitionID, String, ContractID)> = Map::new("ix_updated_by");
 pub const IX_REV: IndexMap<(PartitionID, u64, ContractID)> = Map::new("ix_created_by");
 pub const IX_TAG: IndexMap<(PartitionID, &String, ContractID)> = Map::new("ix_tag");
+
+// Groups transcend partitions, i.e. two contracts may belong to the same group
+// despite beloning to separate partitions.
+pub const IX_GROUP: IndexMap<(GroupID, ContractID)> = Map::new("ix_group");
 
 // Lookup tables for current value of a given key, indexed for a given contract
 // ID. For example, if a contract's "color" string is indexed, supposing that
@@ -313,7 +321,10 @@ pub fn increment_tag_count(
     n.unwrap_or_default()
       .checked_add(1)
       .ok_or_else(|| ContractError::UnexpectedError {
-        reason: format!("adding beyond u64 max for tag '{}' in partition {}", tag, partition),
+        reason: format!(
+          "Overflow incrementing count for tag '{}' in partition {}",
+          tag, partition
+        ),
       })
   })
 }
@@ -328,7 +339,7 @@ pub fn decrement_tag_count(
       .checked_sub(1)
       .ok_or_else(|| ContractError::UnexpectedError {
         reason: format!(
-          "subtracting from tag count of 0 for tag '{}' in partition {}",
+          "error subtracting tag count of 0 for tag '{}' in partition {}",
           tag, partition
         ),
       })
@@ -361,7 +372,7 @@ pub fn load_contract_records(
   Ok(contracts)
 }
 
-pub fn load_partition_id_from_selector(
+pub fn resolve_partition_id(
   storage: &dyn Storage,
   selector: PartitionSelector,
 ) -> Result<PartitionID, ContractError> {
@@ -375,4 +386,78 @@ pub fn load_partition_id_from_selector(
         })?
     },
   })
+}
+
+pub fn resolve_group_id(
+  storage: &dyn Storage,
+  selector: GroupSelector,
+) -> Result<GroupID, ContractError> {
+  Ok(match selector {
+    GroupSelector::Id(id) => id,
+    GroupSelector::Name(name) => {
+      GROUP_NAME_2_ID
+        .load(storage, name.clone())
+        .map_err(|_| ContractError::GroupNotFound {
+          reason: format!("Group '{}' does not exist", name),
+        })?
+    },
+  })
+}
+
+pub fn append_group(
+  storage: &mut dyn Storage,
+  group_id: GroupID,
+  contract_id: ContractID,
+) -> Result<(), ContractError> {
+  if IX_GROUP.has(storage, (group_id, contract_id)) {
+    return Ok(());
+  }
+
+  IX_GROUP.save(storage, (group_id, contract_id), &X)?;
+
+  GROUP_METADATA.update(storage, group_id, |maybe_meta| -> Result<_, ContractError> {
+    if let Some(mut meta) = maybe_meta {
+      meta.size = meta
+        .size
+        .checked_add(Uint64::one())
+        .map_err(|e| ContractError::UnexpectedError {
+          reason: format!("Error incrementing group {} size: {}", group_id, e.to_string()),
+        })?;
+      Ok(meta)
+    } else {
+      Err(ContractError::UnexpectedError {
+        reason: format!("Group {} not found", group_id),
+      })
+    }
+  })?;
+  Ok(())
+}
+
+pub fn remove_from_group(
+  storage: &mut dyn Storage,
+  group_id: GroupID,
+  contract_id: ContractID,
+) -> Result<(), ContractError> {
+  if !IX_GROUP.has(storage, (group_id, contract_id)) {
+    return Ok(());
+  }
+
+  IX_GROUP.remove(storage, (group_id, contract_id));
+
+  GROUP_METADATA.update(storage, group_id, |maybe_meta| -> Result<_, ContractError> {
+    if let Some(mut meta) = maybe_meta {
+      meta.size = meta
+        .size
+        .checked_sub(Uint64::one())
+        .map_err(|e| ContractError::UnexpectedError {
+          reason: format!("Error decrementing group {} size: {}", group_id, e.to_string()),
+        })?;
+      Ok(meta)
+    } else {
+      Err(ContractError::UnexpectedError {
+        reason: format!("Group {} not found", group_id),
+      })
+    }
+  })?;
+  Ok(())
 }
