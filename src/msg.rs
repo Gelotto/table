@@ -5,7 +5,7 @@ use cw_lib::models::Owner;
 use crate::{
   error::ContractError,
   models::{ContractMetadataView, Verbosity},
-  state::PartitionID,
+  state::{GroupID, PartitionID},
 };
 
 pub type Cursor = (u16, String, Uint64);
@@ -16,10 +16,14 @@ pub struct InstantiateMsg {
 }
 
 #[cw_serde]
-pub enum ConfigMsg {
+pub enum AdminMsg {
   UpdateInfo(TableInfo),
   UpdateConfig(Config),
-  RevertUpdateConfig(),
+  RevertConfig(),
+  Unsuspend(Addr),
+  CreatePartition(PartitionCreationParams),
+  CreateIndex(IndexCreationParams),
+  DeleteIndex(String),
 }
 
 #[cw_serde]
@@ -32,16 +36,12 @@ pub struct FlagParams {
 
 #[cw_serde]
 pub enum ExecuteMsg {
-  Sudo(ConfigMsg),
+  Admin(AdminMsg),
   Create(CreationParams),
   Update(UpdateParams),
   Delete(Addr),
   Move(Addr, PartitionSelector),
   Flag(FlagParams),
-  Unsuspend(Addr),
-  CreatePartition(PartitionCreationParams),
-  CreateIndex(IndexCreationParams),
-  DeleteIndex(String),
 }
 
 #[cw_serde]
@@ -227,6 +227,19 @@ pub struct TagUpdates {
 pub struct Config {
   pub owner: Owner,
   pub code_id_allowlist_enabled: bool,
+}
+
+#[cw_serde]
+pub enum GroupSelector {
+  Id(GroupID),
+  Name(String),
+}
+
+#[cw_serde]
+pub struct GroupMetadata {
+  pub id: Uint64,
+  pub description: Option<String>,
+  pub size: Uint64,
 }
 
 impl Config {

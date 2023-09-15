@@ -33,5 +33,5 @@ pub fn on_execute(
     },
   )?;
 
-  Ok(Response::new().add_attribute("action", "create_index"))
+  Ok(Response::new().add_attribute("action", action))
 }

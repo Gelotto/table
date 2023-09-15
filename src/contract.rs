@@ -1,7 +1,7 @@
 use crate::error::ContractError;
 use crate::execute;
 use crate::models::ReplyJob;
-use crate::msg::{ConfigMsg, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, ReadMsg};
+use crate::msg::{AdminMsg, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, ReadMsg};
 use crate::query;
 use crate::state::{self, load_reply_job};
 use cosmwasm_std::{entry_point, Reply};
@@ -36,14 +36,14 @@ pub fn execute(
     ExecuteMsg::Delete(addr) => execute::delete::on_execute(deps, env, info, addr),
     ExecuteMsg::Move(addr, partition) => execute::r#move::on_execute(deps, env, info, addr, partition),
     ExecuteMsg::Flag(params) => execute::flag::on_execute(deps, env, info, params),
-    ExecuteMsg::Unsuspend(addr) => execute::unsuspend::on_execute(deps, env, info, addr),
-    ExecuteMsg::CreatePartition(params) => execute::create_partition::on_execute(deps, env, info, params),
-    ExecuteMsg::CreateIndex(params) => execute::create_index::on_execute(deps, env, info, params),
-    ExecuteMsg::DeleteIndex(name) => execute::delete_index::on_execute(deps, env, info, name),
-    ExecuteMsg::Sudo(msg) => match msg {
-      ConfigMsg::UpdateConfig(config) => execute::sudo::update_config::on_execute(deps, env, info, config),
-      ConfigMsg::UpdateInfo(table_info) => execute::sudo::update_info::on_execute(deps, env, info, table_info),
-      ConfigMsg::RevertUpdateConfig() => execute::sudo::revert_update_config::on_execute(deps, env, info),
+    ExecuteMsg::Admin(msg) => match msg {
+      AdminMsg::UpdateConfig(config) => execute::admin::update_config::on_execute(deps, env, info, config),
+      AdminMsg::UpdateInfo(table_info) => execute::admin::update_info::on_execute(deps, env, info, table_info),
+      AdminMsg::RevertConfig() => execute::admin::revert_config::on_execute(deps, env, info),
+      AdminMsg::Unsuspend(addr) => execute::admin::unsuspend::on_execute(deps, env, info, addr),
+      AdminMsg::CreatePartition(params) => execute::admin::create_partition::on_execute(deps, env, info, params),
+      AdminMsg::CreateIndex(params) => execute::admin::create_index::on_execute(deps, env, info, params),
+      AdminMsg::DeleteIndex(name) => execute::admin::delete_index::on_execute(deps, env, info, name),
     },
   }
 }

@@ -1,6 +1,7 @@
 use crate::models::{ContractMetadataView, ContractMetadataViewDetails, DynamicContractMetadata, ReplyJob, Verbosity};
 use crate::msg::{
-  Config, ContractRecord, IndexMetadata, IndexType, InstantiateMsg, PartitionMetadata, PartitionSelector, TableInfo,
+  Config, ContractRecord, GroupMetadata, IndexMetadata, IndexType, InstantiateMsg, PartitionMetadata,
+  PartitionSelector, TableInfo,
 };
 use crate::{error::ContractError, models::ContractMetadata};
 use cosmwasm_std::{
@@ -14,6 +15,7 @@ use cw_storage_plus::{Item, Map};
 // TODO: add str prefix to custom index names
 
 pub type PartitionID = u16;
+pub type GroupID = u32;
 pub type ContractID = u64;
 pub type IndexMap<K> = Map<'static, K, u8>;
 
@@ -68,6 +70,9 @@ pub const PARTITION_SIZES: Map<PartitionID, Uint64> = Map::new("partition_sizes"
 // Each contract can be associated with many tags. TAG_COUNTS records the total
 // number of contracts with which each tag is associated.
 pub const PARTITION_TAG_COUNTS: Map<(PartitionID, &String), u32> = Map::new("partition_tag_counts");
+
+// Partition metadata
+pub const GROUP_METADATA: Map<String, GroupMetadata> = Map::new("group_metadata");
 
 // Lookup table for finding names/keys of indexed values for a given contract ID
 pub const CONTRACT_INDEXED_KEYS: Map<(ContractID, &String), IndexType> = Map::new("contract_indexed_keys");

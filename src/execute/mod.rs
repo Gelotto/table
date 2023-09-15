@@ -1,10 +1,6 @@
+pub mod admin;
 pub mod create;
-pub mod create_index;
-pub mod create_partition;
 pub mod delete;
-pub mod delete_index;
 pub mod flag;
 pub mod r#move;
-pub mod sudo;
-pub mod unsuspend;
 pub mod update;
