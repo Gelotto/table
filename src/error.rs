@@ -18,6 +18,9 @@ pub enum ContractError {
   #[error("JobNotFound: {reason:?}")]
   JobNotFound { reason: String },
 
+  #[error("PartitionNotFound: {reason:?}")]
+  PartitionNotFound { reason: String },
+
   #[error("NotAuthorized: {reason:?}")]
   NotAuthorized { reason: String },
 

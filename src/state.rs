@@ -1,5 +1,7 @@
-use crate::models::{DynamicContractMetadata, ReplyJob};
-use crate::msg::{Config, IndexMetadata, IndexType, InstantiateMsg};
+use crate::models::{ContractMetadataView, ContractMetadataViewDetails, DynamicContractMetadata, ReplyJob, Verbosity};
+use crate::msg::{
+  Config, ContractRecord, IndexMetadata, IndexType, InstantiateMsg, PartitionMetadata, PartitionSelector, TableInfo,
+};
 use crate::{error::ContractError, models::ContractMetadata};
 use cosmwasm_std::{
   to_binary, Addr, Binary, DepsMut, Empty, Env, MessageInfo, QuerierWrapper, Storage, Timestamp, Uint128, Uint64,
@@ -22,6 +24,9 @@ pub const X: u8 = 1;
 pub const CONFIG_OWNER: Item<Owner> = Item::new("owner");
 pub const CONFIG_CODE_ID_ALLOWLIST_ENABLED: Item<bool> = Item::new("code_id_allowlist_enabled");
 pub const CONFIG_BACKUP: Item<Binary> = Item::new("config_backup");
+
+// Top-level metadata describing what this cw-table is and contains.
+pub const TABLE_INFO: Item<TableInfo> = Item::new("table_info");
 
 // Contract ID-related data. Each new contract ID increments the counter, and
 // the two maps map Addr <-> u64 ID.
@@ -51,6 +56,12 @@ pub const REPLY_JOB_ID_COUNTER: Item<Uint64> = Item::new("reply_job_id_counter")
 // the create() API. Only used if the allowlist is enabled through config.
 pub const CODE_ID_ALLOWLIST: IndexMap<u64> = Map::new("code_id_allowlist");
 
+pub const PARTITION_ID_COUNTER: Item<PartitionID> = Item::new("partition_id_counter");
+pub const PARTITION_NAME_2_ID: Map<String, PartitionID> = Map::new("partition_name_2_id");
+
+// Partition metadata
+pub const PARTITION_METADATA: Map<PartitionID, PartitionMetadata> = Map::new("partition_metadata");
+
 // Number of contracts in each partition.
 pub const PARTITION_SIZES: Map<PartitionID, Uint64> = Map::new("partition_sizes");
 
@@ -59,7 +70,7 @@ pub const PARTITION_SIZES: Map<PartitionID, Uint64> = Map::new("partition_sizes"
 pub const PARTITION_TAG_COUNTS: Map<(PartitionID, &String), u32> = Map::new("partition_tag_counts");
 
 // Lookup table for finding names/keys of indexed values for a given contract ID
-pub const INDEXED_KEYS: Map<(ContractID, &String), IndexType> = Map::new("indexed_keys");
+pub const CONTRACT_INDEXED_KEYS: Map<(ContractID, &String), IndexType> = Map::new("contract_indexed_keys");
 
 // Metadata for custom indices.
 pub const INDEX_METADATA: Map<String, IndexMetadata> = Map::new("index_metadata");
@@ -106,7 +117,35 @@ pub fn initialize(
   Ok(())
 }
 
-pub fn ensure_owner_auth(
+pub fn build_contract_metadata_view(
+  storage: &dyn Storage,
+  id: ContractID,
+  with_details: bool,
+) -> Result<ContractMetadataView, ContractError> {
+  let meta = CONTRACT_METADATA.load(storage, id)?;
+  let dyn_meta = CONTRACT_DYN_METADATA.load(storage, id)?;
+  Ok(ContractMetadataView {
+    created_at: meta.created_at,
+    partition: meta.partition,
+    updated_at: dyn_meta.updated_at,
+    rev: dyn_meta.rev.into(),
+    details: if with_details {
+      Some(ContractMetadataViewDetails {
+        code_id: meta.code_id,
+        created_at_height: meta.created_at_height,
+        created_by: meta.created_by,
+        is_managed: meta.is_managed,
+        updated_at_height: dyn_meta.updated_at_height,
+        updated_by: dyn_meta.updated_by,
+        id: id.into(),
+      })
+    } else {
+      None
+    },
+  })
+}
+
+pub fn ensure_is_authorized_owner(
   storage: &dyn Storage,
   querier: QuerierWrapper<Empty>,
   principal: &Addr,
@@ -125,6 +164,18 @@ pub fn ensure_owner_auth(
   } else {
     Ok(())
   }
+}
+
+pub fn ensure_partition_exists(
+  storage: &dyn Storage,
+  partition_id: PartitionID,
+) -> Result<(), ContractError> {
+  if !PARTITION_METADATA.has(storage, partition_id) {
+    return Err(ContractError::PartitionNotFound {
+      reason: format!("Partition ID {} does not exist", partition_id),
+    });
+  }
+  Ok(())
 }
 
 pub fn ensure_contract_not_suspended(
@@ -276,5 +327,47 @@ pub fn decrement_tag_count(
           tag, partition
         ),
       })
+  })
+}
+
+pub fn load_contract_records(
+  storage: &dyn Storage,
+  contract_ids: &Vec<u64>,
+  maybe_verbosity: Option<Verbosity>,
+) -> Result<Vec<ContractRecord>, ContractError> {
+  let mut contracts: Vec<ContractRecord> = Vec::with_capacity(contract_ids.len());
+
+  for id in contract_ids.iter() {
+    let record = ContractRecord {
+      address: load_contract_addr(storage, *id)?,
+      meta: if let Some(verbosity) = &maybe_verbosity {
+        Some(build_contract_metadata_view(
+          storage,
+          *id,
+          *verbosity == Verbosity::Full,
+        )?)
+      } else {
+        None
+      },
+    };
+    contracts.push(record);
+  }
+
+  Ok(contracts)
+}
+
+pub fn load_partition_id_from_selector(
+  storage: &dyn Storage,
+  selector: PartitionSelector,
+) -> Result<PartitionID, ContractError> {
+  Ok(match selector {
+    PartitionSelector::Id(id) => id,
+    PartitionSelector::Name(name) => {
+      PARTITION_NAME_2_ID
+        .load(storage, name.clone())
+        .map_err(|_| ContractError::PartitionNotFound {
+          reason: format!("Partition '{}' does not exist", name),
+        })?
+    },
   })
 }

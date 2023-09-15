@@ -8,11 +8,11 @@ use crate::{
   models::ContractFlag,
   msg::IndexType,
   state::{
-    ensure_owner_auth, load_contract_id, ContractID, CONTRACT_ADDR_2_ID, CONTRACT_DYN_METADATA, CONTRACT_ID_2_ADDR,
-    CONTRACT_METADATA, CONTRACT_SUSPENSIONS, CONTRACT_TAGS, INDEXED_KEYS, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT,
-    IX_CREATED_BY, IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, PARTITION_TAG_COUNTS,
-    REL_ADDR_2_CONTRACT_ID, REL_CONTRACT_ID_2_ADDR, VALUES_BOOL, VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16,
-    VALUES_U32, VALUES_U64, VALUES_U8,
+    ensure_is_authorized_owner, load_contract_id, ContractID, CONTRACT_ADDR_2_ID, CONTRACT_DYN_METADATA,
+    CONTRACT_ID_2_ADDR, CONTRACT_INDEXED_KEYS, CONTRACT_METADATA, CONTRACT_SUSPENSIONS, CONTRACT_TAGS, IX_CODE_ID,
+    IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES,
+    PARTITION_TAG_COUNTS, REL_ADDR_2_CONTRACT_ID, REL_CONTRACT_ID_2_ADDR, VALUES_BOOL, VALUES_STRING, VALUES_TIME,
+    VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8,
   },
 };
 
@@ -30,7 +30,7 @@ pub fn on_execute(
   // If sender isn't the contract itself, only allow sender if auth'd by owner
   // address or ACL.
   if contract_addr != info.sender {
-    ensure_owner_auth(deps.storage, deps.querier, &info.sender, action)?;
+    ensure_is_authorized_owner(deps.storage, deps.querier, &info.sender, action)?;
   };
 
   let contract_id = load_contract_id(deps.storage, &contract_addr)?;
@@ -127,25 +127,25 @@ fn delete_from_indices(
   // Remove from main metadata indices
   IX_CONTRACT_ID.remove(storage, (p, id, id));
   IX_CODE_ID.remove(storage, (p, meta.code_id.into(), id));
-  IX_CREATED_AT.remove(storage, (p, meta.time.nanos(), id));
-  IX_CREATED_BY.remove(storage, (p, meta.initiator.to_string(), id));
+  IX_CREATED_AT.remove(storage, (p, meta.created_at.nanos(), id));
+  IX_CREATED_BY.remove(storage, (p, meta.created_by.to_string(), id));
 
   let up_meta = CONTRACT_DYN_METADATA.load(storage, id)?;
 
   // Remove from "update" metadata indices
-  IX_UPDATED_AT.remove(storage, (p, up_meta.time.nanos(), id));
-  IX_UPDATED_BY.remove(storage, (p, up_meta.initiator.to_string(), id));
+  IX_UPDATED_AT.remove(storage, (p, up_meta.updated_at.nanos(), id));
+  IX_UPDATED_BY.remove(storage, (p, up_meta.updated_by.to_string(), id));
   IX_REV.remove(storage, (p, up_meta.rev.into(), id));
 
   // Remove from custom indices
-  for result in INDEXED_KEYS
+  for result in CONTRACT_INDEXED_KEYS
     .prefix(id)
     .range(storage, None, None, Order::Ascending)
     .collect::<Vec<StdResult<_>>>()
   {
     let (index_name, index_type) = result?;
 
-    INDEXED_KEYS.remove(storage, (id, &index_name));
+    CONTRACT_INDEXED_KEYS.remove(storage, (id, &index_name));
 
     match index_type {
       IndexType::String => VALUES_STRING.remove(storage, (id, &index_name)),

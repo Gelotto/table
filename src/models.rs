@@ -16,22 +16,48 @@ pub struct ContractFlag {
 pub struct ContractMetadata {
   pub id: Uint64,
   pub code_id: Uint64,
-  pub initiator: Addr,
-  pub time: Timestamp,
-  pub height: Uint64,
+  pub created_by: Addr,
+  pub created_at: Timestamp,
+  pub created_at_height: Uint64,
   pub is_managed: bool,
   pub partition: u16,
 }
 
 #[cw_serde]
+pub struct ContractMetadataViewDetails {
+  pub id: Uint64,
+  pub is_managed: bool,
+  pub code_id: Uint64,
+  pub created_by: Addr,
+  pub created_at_height: Uint64,
+  pub updated_at_height: Uint64,
+  pub updated_by: Addr,
+}
+
+#[cw_serde]
+pub struct ContractMetadataView {
+  pub partition: u16,
+  pub created_at: Timestamp,
+  pub updated_at: Timestamp,
+  pub rev: Uint64,
+  pub details: Option<ContractMetadataViewDetails>,
+}
+
+#[cw_serde]
 pub struct DynamicContractMetadata {
   pub rev: Uint64,
-  pub time: Timestamp,
-  pub height: Uint64,
-  pub initiator: Addr,
+  pub updated_at: Timestamp,
+  pub updated_at_height: Uint64,
+  pub updated_by: Addr,
 }
 
 #[cw_serde]
 pub enum ReplyJob {
   Create { params: CreationParams, initiator: Addr },
+}
+
+#[cw_serde]
+pub enum Verbosity {
+  Basic,
+  Full,
 }

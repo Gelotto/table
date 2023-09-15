@@ -43,7 +43,7 @@ pub fn read_relationships(
         cursor = Some((name.clone(), account_addr_str.clone()));
         relationships.push(Relationship {
           address: Addr::unchecked(account_addr_str),
-          rel: name,
+          name,
         });
       }
     },
@@ -70,7 +70,7 @@ pub fn read_relationships(
         let related_contract_id = parse::<u64>(contract_id_str.clone())?;
         if let Some(contract_addr) = memoized_addrs.get(&related_contract_id) {
           relationships.push(Relationship {
-            rel: name.clone(),
+            name: name.clone(),
             address: Addr::unchecked(contract_addr),
           });
         } else {
@@ -78,7 +78,7 @@ pub fn read_relationships(
           memoized_addrs.insert(related_contract_id, contract_addr.clone().into());
           relationships.push(Relationship {
             address: contract_addr,
-            rel: name.clone(),
+            name: name.clone(),
           });
         }
 

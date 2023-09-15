@@ -2,7 +2,11 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Api, Binary, Timestamp, Uint128, Uint64};
 use cw_lib::models::Owner;
 
-use crate::error::ContractError;
+use crate::{
+  error::ContractError,
+  models::{ContractMetadataView, Verbosity},
+  state::PartitionID,
+};
 
 pub type Cursor = (u16, String, Uint64);
 
@@ -13,8 +17,9 @@ pub struct InstantiateMsg {
 
 #[cw_serde]
 pub enum ConfigMsg {
-  Update(Config),
-  Revert(),
+  UpdateInfo(TableInfo),
+  UpdateConfig(Config),
+  RevertUpdateConfig(),
 }
 
 #[cw_serde]
@@ -27,13 +32,14 @@ pub struct FlagParams {
 
 #[cw_serde]
 pub enum ExecuteMsg {
-  Config(ConfigMsg),
+  Sudo(ConfigMsg),
   Create(CreationParams),
   Update(UpdateParams),
   Delete(Addr),
-  Move(Addr, u16),
+  Move(Addr, PartitionSelector),
   Flag(FlagParams),
   Unsuspend(Addr),
+  CreatePartition(PartitionCreationParams),
   CreateIndex(IndexCreationParams),
   DeleteIndex(String),
 }
@@ -47,7 +53,8 @@ pub enum ReadMsg {
 
 #[cw_serde]
 pub enum QueryMsg {
-  Metadata {},
+  Indices(),
+  Partition(PartitionSelector),
   Read(ReadMsg),
 }
 
@@ -55,11 +62,30 @@ pub enum QueryMsg {
 pub struct MigrateMsg {}
 
 #[cw_serde]
-pub struct MetadataResponse {}
+pub struct IndicesResponse(pub Vec<IndexMetadata>);
+
+#[cw_serde]
+pub struct TagCount {
+  pub tag: String,
+  pub count: u32,
+}
+
+#[cw_serde]
+pub struct PartitionResponse {
+  pub size: Uint64,
+  pub tags: Vec<TagCount>,
+  pub cursor: Option<String>,
+}
+
+#[cw_serde]
+pub struct ContractRecord {
+  pub address: Addr,
+  pub meta: Option<ContractMetadataView>,
+}
 
 #[cw_serde]
 pub struct ReadIndexResponse {
-  pub contracts: Vec<Addr>,
+  pub contracts: Vec<ContractRecord>,
   pub cursor: Option<Cursor>,
 }
 
@@ -71,7 +97,7 @@ pub struct ReadTagsResponse {
 
 #[cw_serde]
 pub struct Relationship {
-  pub rel: String,
+  pub name: String,
   pub address: Addr,
 }
 
@@ -167,6 +193,31 @@ pub enum IndexType {
 }
 
 #[cw_serde]
+pub enum PartitionSelector {
+  Id(PartitionID),
+  Name(String),
+}
+
+#[cw_serde]
+pub struct PartitionMetadata {
+  pub name: String,
+  pub description: Option<String>,
+}
+
+#[cw_serde]
+pub struct PartitionMetadataView {
+  pub size: Uint64,
+  pub name: String,
+  pub description: Option<String>,
+}
+
+#[cw_serde]
+pub struct TableInfo {
+  pub name: Option<String>,
+  pub description: Option<String>,
+}
+
+#[cw_serde]
 pub struct IndexMetadata {
   pub index_type: IndexType,
   pub name: String,
@@ -207,6 +258,7 @@ pub struct ReadTagsParams {
   pub desc: Option<bool>,
   pub limit: Option<u32>,
   pub partition: u16,
+  pub verbosity: Option<Verbosity>,
 }
 
 #[cw_serde]
@@ -223,6 +275,12 @@ pub struct ReadRelationshipsParams {
   pub desc: Option<bool>,
   pub limit: Option<u32>,
   pub partition: u16,
+}
+
+#[cw_serde]
+pub struct PartitionCreationParams {
+  pub name: Option<String>,
+  pub description: Option<String>,
 }
 
 #[cw_serde]
@@ -246,4 +304,5 @@ pub struct ReadIndexParams {
   pub desc: Option<bool>,
   pub limit: Option<u32>,
   pub cursor: Option<Cursor>,
+  pub verbosity: Option<Verbosity>,
 }

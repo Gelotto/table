@@ -3,10 +3,12 @@ use crate::{
   models::DynamicContractMetadata,
   msg::{IndexType, KeyValue, TagUpdates, UpdateParams},
   state::{
-    decrement_tag_count, ensure_contract_not_suspended, ensure_owner_auth, increment_tag_count, load_contract_id,
-    CONTRACT_DYN_METADATA, CONTRACT_METADATA, INDEXED_KEYS, IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, VALUES_BOOL,
-    VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8, X,
+    decrement_tag_count, ensure_contract_not_suspended, ensure_is_authorized_owner, increment_tag_count,
+    load_contract_id, CONTRACT_DYN_METADATA, CONTRACT_INDEXED_KEYS, CONTRACT_METADATA, IX_REV, IX_TAG, IX_UPDATED_AT,
+    IX_UPDATED_BY, VALUES_BOOL, VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8,
+    X,
   },
+  util::build_index_name,
 };
 use cosmwasm_std::{attr, Addr, DepsMut, Env, MessageInfo, Response, Storage, Timestamp, Uint128, Uint64};
 use cw_storage_plus::Map;
@@ -22,7 +24,7 @@ pub fn on_execute(
   // Get address of contract whose state we will update. If sender isn't the
   // contract itself, only allow sender if auth'd by owner address or ACL.
   let contract_addr = if let Some(contract_addr) = params.contract {
-    ensure_owner_auth(deps.storage, deps.querier, &info.sender, action)?;
+    ensure_is_authorized_owner(deps.storage, deps.querier, &info.sender, action)?;
     deps.api.addr_validate(contract_addr.as_str())?
   } else {
     info.sender
@@ -63,9 +65,9 @@ fn update_metadata(
     if let Some(mut meta) = maybe_meta {
       maybe_prev_meta = Some(meta.clone());
       meta.rev += Uint64::one();
-      meta.time = env.block.time;
-      meta.height = env.block.height.into();
-      meta.initiator = initiator.clone();
+      meta.updated_at = env.block.time;
+      meta.updated_at_height = env.block.height.into();
+      meta.updated_by = initiator.clone();
       Ok(meta)
     } else {
       Err(ContractError::UnexpectedError {
@@ -76,11 +78,11 @@ fn update_metadata(
 
   if let Some(prev_meta) = maybe_prev_meta {
     IX_REV.remove(storage, (partition, prev_meta.rev.into(), contract_id));
-    IX_UPDATED_AT.remove(storage, (partition, prev_meta.time.nanos(), contract_id));
+    IX_UPDATED_AT.remove(storage, (partition, prev_meta.updated_at.nanos(), contract_id));
   }
 
   IX_REV.save(storage, (partition, meta.rev.into(), contract_id), &X)?;
-  IX_UPDATED_AT.save(storage, (partition, meta.time.nanos(), contract_id), &X)?;
+  IX_UPDATED_AT.save(storage, (partition, meta.updated_at.nanos(), contract_id), &X)?;
   IX_UPDATED_BY.save(storage, (partition, initiator.to_string(), contract_id), &X)?;
 
   Ok(())
@@ -152,13 +154,13 @@ fn update_string_index(
       index.remove(storage, (partition, &old_val, contract_id));
     }
     index.save(storage, (partition, new_val, contract_id), &X)?;
-    if !INDEXED_KEYS.has(storage, (contract_id, &index_name)) {
-      INDEXED_KEYS.save(storage, (contract_id, &index_name), &IndexType::String)?;
+    if !CONTRACT_INDEXED_KEYS.has(storage, (contract_id, &index_name)) {
+      CONTRACT_INDEXED_KEYS.save(storage, (contract_id, &index_name), &IndexType::String)?;
     }
   } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &index_name))? {
     index.remove(storage, (partition, &old_val, contract_id));
     indexed_value_map.remove(storage, (contract_id, index_name));
-    INDEXED_KEYS.remove(storage, (contract_id, &index_name));
+    CONTRACT_INDEXED_KEYS.remove(storage, (contract_id, &index_name));
   }
   Ok(())
 }
@@ -170,7 +172,8 @@ fn update_bool_index(
   key: &String,
   maybe_value: &Option<bool>,
 ) -> Result<(), ContractError> {
-  let index: Map<(u16, u8, u64), u8> = Map::new(key.as_str());
+  let index_name = build_index_name(key);
+  let index: Map<(u16, u8, u64), u8> = Map::new(&index_name);
   let indexed_value_map = VALUES_BOOL;
   let mut maybe_old_bool: Option<bool> = None;
 
@@ -187,13 +190,13 @@ fn update_bool_index(
       index.remove(storage, (partition, if old_val { 1 } else { 0 }, contract_id));
     }
     index.save(storage, (partition, if *new_val { 1 } else { 0 }, contract_id), &X)?;
-    if !INDEXED_KEYS.has(storage, (contract_id, &key)) {
-      INDEXED_KEYS.save(storage, (contract_id, &key), &IndexType::Bool)?;
+    if !CONTRACT_INDEXED_KEYS.has(storage, (contract_id, &key)) {
+      CONTRACT_INDEXED_KEYS.save(storage, (contract_id, &key), &IndexType::Bool)?;
     }
   } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &key))? {
     index.remove(storage, (partition, if old_val { 1 } else { 0 }, contract_id));
     indexed_value_map.remove(storage, (contract_id, key));
-    INDEXED_KEYS.remove(storage, (contract_id, &key));
+    CONTRACT_INDEXED_KEYS.remove(storage, (contract_id, &key));
   }
   Ok(())
 }
@@ -205,7 +208,8 @@ fn update_timestamp_index(
   key: &String,
   maybe_value: &Option<Timestamp>,
 ) -> Result<(), ContractError> {
-  let index: Map<(u16, u64, u64), u8> = Map::new(key.as_str());
+  let index_name = build_index_name(key);
+  let index: Map<(u16, u64, u64), u8> = Map::new(&index_name);
   let indexed_value_map = VALUES_TIME;
 
   if let Some(new_val) = maybe_value {
@@ -222,13 +226,13 @@ fn update_timestamp_index(
       index.remove(storage, (partition, old_val.nanos(), contract_id));
     }
     index.save(storage, (partition, new_val.nanos(), contract_id), &X)?;
-    if !INDEXED_KEYS.has(storage, (contract_id, &key)) {
-      INDEXED_KEYS.save(storage, (contract_id, &key), &IndexType::Timestamp)?;
+    if !CONTRACT_INDEXED_KEYS.has(storage, (contract_id, &key)) {
+      CONTRACT_INDEXED_KEYS.save(storage, (contract_id, &key), &IndexType::Timestamp)?;
     }
   } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &key))? {
     index.remove(storage, (partition, old_val.nanos(), contract_id));
     indexed_value_map.remove(storage, (contract_id, key));
-    INDEXED_KEYS.remove(storage, (contract_id, &key));
+    CONTRACT_INDEXED_KEYS.remove(storage, (contract_id, &key));
   }
   Ok(())
 }
@@ -240,7 +244,8 @@ fn update_u8_index(
   key: &String,
   maybe_value: &Option<u8>,
 ) -> Result<(), ContractError> {
-  let index: Map<(u16, u8, u64), u8> = Map::new(key.as_str());
+  let index_name = build_index_name(key);
+  let index: Map<(u16, u8, u64), u8> = Map::new(&index_name);
   let indexed_value_map = VALUES_U8;
   let mut maybe_old_val: Option<u8> = None;
 
@@ -257,13 +262,13 @@ fn update_u8_index(
       index.remove(storage, (partition, old_val, contract_id));
     }
     index.save(storage, (partition, *new_val, contract_id), &X)?;
-    if !INDEXED_KEYS.has(storage, (contract_id, &key)) {
-      INDEXED_KEYS.save(storage, (contract_id, &key), &IndexType::Uint8)?;
+    if !CONTRACT_INDEXED_KEYS.has(storage, (contract_id, &key)) {
+      CONTRACT_INDEXED_KEYS.save(storage, (contract_id, &key), &IndexType::Uint8)?;
     }
   } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &key))? {
     index.remove(storage, (partition, old_val, contract_id));
     indexed_value_map.remove(storage, (contract_id, key));
-    INDEXED_KEYS.remove(storage, (contract_id, &key));
+    CONTRACT_INDEXED_KEYS.remove(storage, (contract_id, &key));
   }
   Ok(())
 }
@@ -275,7 +280,8 @@ fn update_u16_index(
   key: &String,
   maybe_value: &Option<u16>,
 ) -> Result<(), ContractError> {
-  let index: Map<(u16, u16, u64), u8> = Map::new(key.as_str());
+  let index_name = build_index_name(key);
+  let index: Map<(u16, u16, u64), u8> = Map::new(&index_name);
   let indexed_value_map = VALUES_U16;
   let mut maybe_old_val: Option<u16> = None;
 
@@ -292,13 +298,13 @@ fn update_u16_index(
       index.remove(storage, (partition, old_val, contract_id));
     }
     index.save(storage, (partition, *new_val, contract_id), &X)?;
-    if !INDEXED_KEYS.has(storage, (contract_id, &key)) {
-      INDEXED_KEYS.save(storage, (contract_id, &key), &IndexType::Uint16)?;
+    if !CONTRACT_INDEXED_KEYS.has(storage, (contract_id, &key)) {
+      CONTRACT_INDEXED_KEYS.save(storage, (contract_id, &key), &IndexType::Uint16)?;
     }
   } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &key))? {
     index.remove(storage, (partition, old_val, contract_id));
     indexed_value_map.remove(storage, (contract_id, key));
-    INDEXED_KEYS.remove(storage, (contract_id, &key));
+    CONTRACT_INDEXED_KEYS.remove(storage, (contract_id, &key));
   }
   Ok(())
 }
@@ -310,7 +316,8 @@ fn update_u32_index(
   key: &String,
   maybe_value: &Option<u32>,
 ) -> Result<(), ContractError> {
-  let index: Map<(u16, u32, u64), u8> = Map::new(key.as_str());
+  let index_name = build_index_name(key);
+  let index: Map<(u16, u32, u64), u8> = Map::new(&index_name);
   let indexed_value_map = VALUES_U32;
   let mut maybe_old_bool: Option<u32> = None;
 
@@ -327,13 +334,13 @@ fn update_u32_index(
       index.remove(storage, (partition, old_val, contract_id));
     }
     index.save(storage, (partition, *new_val, contract_id), &X)?;
-    if !INDEXED_KEYS.has(storage, (contract_id, &key)) {
-      INDEXED_KEYS.save(storage, (contract_id, &key), &IndexType::Uint32)?;
+    if !CONTRACT_INDEXED_KEYS.has(storage, (contract_id, &key)) {
+      CONTRACT_INDEXED_KEYS.save(storage, (contract_id, &key), &IndexType::Uint32)?;
     }
   } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &key))? {
     index.remove(storage, (partition, old_val, contract_id));
     indexed_value_map.remove(storage, (contract_id, key));
-    INDEXED_KEYS.remove(storage, (contract_id, &key));
+    CONTRACT_INDEXED_KEYS.remove(storage, (contract_id, &key));
   }
   Ok(())
 }
@@ -345,7 +352,8 @@ fn update_u64_index(
   key: &String,
   maybe_value: &Option<Uint64>,
 ) -> Result<(), ContractError> {
-  let index: Map<(u16, u64, u64), u8> = Map::new(key.as_str());
+  let index_name = build_index_name(key);
+  let index: Map<(u16, u64, u64), u8> = Map::new(&index_name);
   let indexed_value_map = VALUES_U64;
   let mut maybe_old_val: Option<Uint64> = None;
 
@@ -362,13 +370,13 @@ fn update_u64_index(
       index.remove(storage, (partition, old_val.into(), contract_id));
     }
     index.save(storage, (partition, (*new_val).into(), contract_id), &X)?;
-    if !INDEXED_KEYS.has(storage, (contract_id, &key)) {
-      INDEXED_KEYS.save(storage, (contract_id, &key), &IndexType::Uint64)?;
+    if !CONTRACT_INDEXED_KEYS.has(storage, (contract_id, &key)) {
+      CONTRACT_INDEXED_KEYS.save(storage, (contract_id, &key), &IndexType::Uint64)?;
     }
   } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &key))? {
     index.remove(storage, (partition, old_val.into(), contract_id));
     indexed_value_map.remove(storage, (contract_id, key));
-    INDEXED_KEYS.remove(storage, (contract_id, &key));
+    CONTRACT_INDEXED_KEYS.remove(storage, (contract_id, &key));
   }
   Ok(())
 }
@@ -380,7 +388,8 @@ fn update_u128_index(
   key: &String,
   maybe_value: &Option<Uint128>,
 ) -> Result<(), ContractError> {
-  let index: Map<(u16, u128, u64), u8> = Map::new(key.as_str());
+  let index_name = build_index_name(key);
+  let index: Map<(u16, u128, u64), u8> = Map::new(&index_name);
   let indexed_value_map = VALUES_U128;
   let mut maybe_old_val: Option<Uint128> = None;
 
@@ -397,13 +406,13 @@ fn update_u128_index(
       index.remove(storage, (partition, old_val.into(), contract_id));
     }
     index.save(storage, (partition, (*new_val).into(), contract_id), &X)?;
-    if !INDEXED_KEYS.has(storage, (contract_id, &key)) {
-      INDEXED_KEYS.save(storage, (contract_id, &key), &IndexType::Uint128)?;
+    if !CONTRACT_INDEXED_KEYS.has(storage, (contract_id, &key)) {
+      CONTRACT_INDEXED_KEYS.save(storage, (contract_id, &key), &IndexType::Uint128)?;
     }
   } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &key))? {
     index.remove(storage, (partition, old_val.into(), contract_id));
     indexed_value_map.remove(storage, (contract_id, key));
-    INDEXED_KEYS.remove(storage, (contract_id, &key));
+    CONTRACT_INDEXED_KEYS.remove(storage, (contract_id, &key));
   }
   Ok(())
 }

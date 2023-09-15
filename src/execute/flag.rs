@@ -5,7 +5,7 @@ use crate::{
   error::ContractError,
   models::ContractFlag,
   msg::FlagParams,
-  state::{ensure_owner_auth, load_contract_id, CONTRACT_SUSPENSIONS},
+  state::{ensure_is_authorized_owner, load_contract_id, CONTRACT_SUSPENSIONS},
 };
 
 pub fn on_execute(
@@ -21,7 +21,7 @@ pub fn on_execute(
   // If sender isn't the contract itself, only allow sender if auth'd by owner
   // address or ACL.
   if contract_addr != info.sender {
-    ensure_owner_auth(deps.storage, deps.querier, &info.sender, action)?;
+    ensure_is_authorized_owner(deps.storage, deps.querier, &info.sender, action)?;
   };
 
   let contract_id = load_contract_id(deps.storage, &contract_addr)?;

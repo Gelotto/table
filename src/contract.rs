@@ -37,11 +37,13 @@ pub fn execute(
     ExecuteMsg::Move(addr, partition) => execute::r#move::on_execute(deps, env, info, addr, partition),
     ExecuteMsg::Flag(params) => execute::flag::on_execute(deps, env, info, params),
     ExecuteMsg::Unsuspend(addr) => execute::unsuspend::on_execute(deps, env, info, addr),
+    ExecuteMsg::CreatePartition(params) => execute::create_partition::on_execute(deps, env, info, params),
     ExecuteMsg::CreateIndex(params) => execute::create_index::on_execute(deps, env, info, params),
-    ExecuteMsg::DeleteIndex(index_name) => execute::delete_index::on_execute(deps, env, info, index_name),
-    ExecuteMsg::Config(msg) => match msg {
-      ConfigMsg::Update(config) => execute::config::update::on_execute(deps, env, info, config),
-      ConfigMsg::Revert() => execute::config::revert::on_execute(deps, env, info),
+    ExecuteMsg::DeleteIndex(name) => execute::delete_index::on_execute(deps, env, info, name),
+    ExecuteMsg::Sudo(msg) => match msg {
+      ConfigMsg::UpdateConfig(config) => execute::sudo::update_config::on_execute(deps, env, info, config),
+      ConfigMsg::UpdateInfo(table_info) => execute::sudo::update_info::on_execute(deps, env, info, table_info),
+      ConfigMsg::RevertUpdateConfig() => execute::sudo::revert_update_config::on_execute(deps, env, info),
     },
   }
 }
@@ -65,7 +67,8 @@ pub fn query(
   msg: QueryMsg,
 ) -> Result<Binary, ContractError> {
   let result = match msg {
-    QueryMsg::Metadata {} => to_binary(&query::metadata(deps)?),
+    QueryMsg::Indices() => to_binary(&query::indices(deps)?),
+    QueryMsg::Partition(selector) => to_binary(&query::partition(deps, selector)?),
     QueryMsg::Read(msg) => match msg {
       ReadMsg::Index(params) => to_binary(&query::read::index(deps, params)?),
       ReadMsg::Tags(params) => to_binary(&query::read::tags(deps, params)?),

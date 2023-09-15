@@ -20,3 +20,7 @@ pub fn parse_bool(s: String) -> Result<u8, ContractError> {
     parse(s)?
   })
 }
+
+pub fn build_index_name(name: &String) -> String {
+  format!("_ix_{}", name)
+}

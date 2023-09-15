@@ -9,7 +9,7 @@ use crate::{
   models::{ContractMetadata, ReplyJob},
   msg::CreationParams,
   state::{
-    ensure_owner_auth, load_next_contract_id, CONTRACT_METADATA, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT,
+    ensure_is_authorized_owner, load_next_contract_id, CONTRACT_METADATA, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT,
     IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, REPLY_JOBS, REPLY_JOB_ID_COUNTER, X,
   },
 };
@@ -23,7 +23,7 @@ pub fn on_execute(
   let action = "create";
 
   ensure_authorized_code_id(deps.storage, params.code_id.into())?;
-  ensure_owner_auth(deps.storage, deps.querier, &info.sender, action)?;
+  ensure_is_authorized_owner(deps.storage, deps.querier, &info.sender, action)?;
 
   let initiator = &info.sender;
   let job_id = create_reply_job(deps.storage, &params, initiator)?;
@@ -80,9 +80,9 @@ pub fn on_reply(
           let metadata = ContractMetadata {
             id: contract_id.into(),
             is_managed: params.admin.is_none(),
-            height: env.block.height.into(),
-            time: env.block.time,
-            initiator: initiator.clone(),
+            created_at_height: env.block.height.into(),
+            created_at: env.block.time,
+            created_by: initiator.clone(),
             code_id: params.code_id.into(),
             partition: params.partition,
           };

@@ -3,11 +3,11 @@ use std::str::FromStr;
 
 use crate::msg::{Cursor, IndexName, IndexQueryParams, ReadIndexResponse};
 use crate::state::{
-  CONTRACT_ID_2_ADDR, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY,
+  load_contract_records, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY,
 };
 use crate::util::{parse, parse_bool};
 use crate::{error::ContractError, msg::ReadIndexParams};
-use cosmwasm_std::{Addr, Api, Deps, Order, StdResult, Storage, Uint64};
+use cosmwasm_std::{Api, Deps, Order, StdResult, Storage, Uint64};
 use cw_storage_plus::{Bound, KeyDeserialize, Map, Prefixer, PrimaryKey};
 
 pub fn read_index(
@@ -16,6 +16,7 @@ pub fn read_index(
 ) -> Result<ReadIndexResponse, ContractError> {
   // let limit = query.limit.unwrap_or(20).clamp(1, 200) as usize;
   // let desc = query.desc.unwrap_or(false);
+  let verbosity = query.verbosity.clone();
 
   // Find matching contract ID's
   let (ids, cursor) = match query.params.clone() {
@@ -24,12 +25,9 @@ pub fn read_index(
   }?;
 
   // Convert contract ID's to Addrs
-  let addresses = load_contract_addresses(deps.storage, &ids)?;
+  let contracts = load_contract_records(deps.storage, &ids, verbosity)?;
 
-  Ok(ReadIndexResponse {
-    contracts: addresses,
-    cursor,
-  })
+  Ok(ReadIndexResponse { contracts, cursor })
 }
 
 fn build_range_bounds<'a, T>(
@@ -292,15 +290,4 @@ fn get_contract_ids(
       next_page(index.keys(storage, min, max, order), limit)?
     },
   })
-}
-
-fn load_contract_addresses(
-  storage: &dyn Storage,
-  contract_ids: &Vec<u64>,
-) -> Result<Vec<Addr>, ContractError> {
-  let mut addrs: Vec<Addr> = Vec::with_capacity(contract_ids.len());
-  for id in contract_ids.iter() {
-    addrs.push(CONTRACT_ID_2_ADDR.load(storage, *id)?)
-  }
-  Ok(addrs)
 }
