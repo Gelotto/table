@@ -74,7 +74,8 @@ pub struct TagCount {
 pub struct PartitionResponse {
   pub size: Uint64,
   pub tags: Vec<TagCount>,
-  pub cursor: Option<String>,
+  pub description: Option<String>,
+  pub name: String,
 }
 
 #[cw_serde]
@@ -200,13 +201,6 @@ pub enum PartitionSelector {
 
 #[cw_serde]
 pub struct PartitionMetadata {
-  pub name: String,
-  pub description: Option<String>,
-}
-
-#[cw_serde]
-pub struct PartitionMetadataView {
-  pub size: Uint64,
   pub name: String,
   pub description: Option<String>,
 }
