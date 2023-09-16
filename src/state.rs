@@ -1,7 +1,7 @@
 use crate::models::{ContractMetadataView, ContractMetadataViewDetails, Details, DynamicContractMetadata, ReplyJob};
 use crate::msg::{
-  Config, ContractRecord, GroupMetadata, GroupSelector, IndexMetadata, IndexType, InstantiateMsg, PartitionMetadata,
-  PartitionSelector, TableInfo,
+  Config, ContractRecord, GroupMetadata, GroupSelector, IndexMetadata, IndexType, InstantiateMsg,
+  PartitionCreationParams, PartitionMetadata, PartitionSelector, TableInfo,
 };
 use crate::{error::ContractError, models::ContractMetadata};
 use cosmwasm_std::{
@@ -120,15 +120,28 @@ pub const REL_CONTRACT_ID_2_ADDR: Map<(ContractID, String, String), u8> = Map::n
 
 pub fn initialize(
   deps: DepsMut,
-  _env: &Env,
-  _info: &MessageInfo,
-  msg: &InstantiateMsg,
+  env: Env,
+  _info: MessageInfo,
+  msg: InstantiateMsg,
 ) -> Result<(), ContractError> {
   deps.api.addr_validate(msg.config.owner.to_addr().as_str())?;
   CONFIG_OWNER.save(deps.storage, &msg.config.owner)?;
   CONFIG_CODE_ID_ALLOWLIST_ENABLED.save(deps.storage, &msg.config.code_id_allowlist_enabled)?;
   CONTRACT_ID_COUNTER.save(deps.storage, &Uint64::zero())?;
   REPLY_JOB_ID_COUNTER.save(deps.storage, &Uint64::zero())?;
+  GROUP_ID_COUNTER.save(deps.storage, &0)?;
+  PARTITION_ID_COUNTER.save(deps.storage, &0)?;
+  TABLE_INFO.save(deps.storage, &msg.info)?;
+
+  for params in msg.partitions.unwrap_or_else(|| {
+    vec![PartitionCreationParams {
+      name: Some("Unnamed Partition 1".to_owned()),
+      description: None,
+    }]
+  }) {
+    create_partition(deps.storage, env.block.time, &params)?;
+  }
+
   Ok(())
 }
 
@@ -478,4 +491,41 @@ pub fn load_contract_group_ids(
     group_ids.push(group_id);
   }
   Ok(group_ids)
+}
+
+pub fn create_partition(
+  storage: &mut dyn Storage,
+  time: Timestamp,
+  params: &PartitionCreationParams,
+) -> Result<PartitionID, ContractError> {
+  let partition_id = increment_next_partition_id(storage)?;
+  let name = params.name.clone().unwrap_or_else(|| partition_id.to_string());
+
+  // Save id into name -> ID lookup table.
+  PARTITION_NAME_2_ID.save(storage, name.clone(), &partition_id)?;
+
+  // Init partition metadata state.
+  PARTITION_METADATA.update(storage, partition_id, |maybe_meta| -> Result<_, ContractError> {
+    if maybe_meta.is_some() {
+      Err(ContractError::NotAuthorized {
+        reason: format!("partition {} already exists", partition_id),
+      })
+    } else {
+      Ok(PartitionMetadata {
+        description: params.description.clone(),
+        created_at: time,
+        name,
+      })
+    }
+  })?;
+
+  Ok(partition_id)
+}
+
+fn increment_next_partition_id(storage: &mut dyn Storage) -> Result<PartitionID, ContractError> {
+  PARTITION_ID_COUNTER.update(storage, |n| -> Result<_, ContractError> {
+    n.checked_add(1).ok_or_else(|| ContractError::UnexpectedError {
+      reason: "unexpected overflow incrementing partition ID counter".to_owned(),
+    })
+  })
 }

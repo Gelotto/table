@@ -1,3 +1,4 @@
+pub mod create;
 pub mod create_group;
 pub mod create_index;
 pub mod create_partition;

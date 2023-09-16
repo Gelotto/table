@@ -19,7 +19,7 @@ pub fn instantiate(
   msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
   set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-  state::initialize(deps, &env, &info, &msg)?;
+  state::initialize(deps, env, info, msg)?;
   Ok(Response::new().add_attribute("action", "instantiate"))
 }
 
@@ -32,7 +32,6 @@ pub fn execute(
 ) -> Result<Response, ContractError> {
   match msg {
     ExecuteMsg::Client(msg) => match msg {
-      ClientMsg::Create(params) => execute::client::create::on_execute(deps, env, info, params),
       ClientMsg::Update(params) => execute::client::update::on_execute(deps, env, info, params),
       ClientMsg::Delete(addr) => execute::client::delete::on_execute(deps, env, info, addr),
       ClientMsg::Flag(params) => execute::client::flag::on_execute(deps, env, info, params),
@@ -41,8 +40,9 @@ pub fn execute(
       AdminMsg::UpdateInfo(table_info) => execute::admin::update_info::on_execute(deps, env, info, table_info),
       AdminMsg::UpdateConfig(config) => execute::admin::update_config::on_execute(deps, env, info, config),
       AdminMsg::RevertConfig() => execute::admin::revert_config::on_execute(deps, env, info),
-      AdminMsg::CreatePartition(params) => execute::admin::create_partition::on_execute(deps, env, info, params),
+      AdminMsg::Create(params) => execute::admin::create::on_execute(deps, env, info, params),
       AdminMsg::CreateIndex(params) => execute::admin::create_index::on_execute(deps, env, info, params),
+      AdminMsg::CreatePartition(params) => execute::admin::create_partition::on_execute(deps, env, info, params),
       AdminMsg::DeleteIndex(name) => execute::admin::delete_index::on_execute(deps, env, info, name),
       AdminMsg::Unsuspend(addr) => execute::admin::unsuspend::on_execute(deps, env, info, addr),
       AdminMsg::SetGroups(addr, updates) => execute::admin::set_groups::on_execute(deps, env, info, addr, updates),
@@ -61,7 +61,7 @@ pub fn reply(
 ) -> Result<Response, ContractError> {
   let job = load_reply_job(deps.storage, reply.id)?;
   return Ok(match job {
-    ReplyJob::Create { params, initiator } => execute::client::create::on_reply(deps, env, reply, params, initiator),
+    ReplyJob::Create { params, initiator } => execute::admin::create::on_reply(deps, env, reply, params, initiator),
   }?);
 }
 

@@ -12,20 +12,32 @@ pub type Cursor = (PartitionID, String, Uint64);
 
 #[cw_serde]
 pub struct InstantiateMsg {
+  pub info: TableInfo,
   pub config: Config,
+  pub partitions: Option<Vec<PartitionCreationParams>>,
+  pub groups: Option<Vec<GroupCreationParams>>,
+  pub indices: Option<Vec<IndexCreationParams>>,
 }
 
 #[cw_serde]
 pub enum AdminMsg {
+  Create(CreationParams),
+  CreatePartition(PartitionCreationParams),
+  CreateIndex(IndexCreationParams),
   UpdateInfo(TableInfo),
   SetPartition(Addr, PartitionSelector),
   SetGroups(Addr, GroupUpdates),
   UpdateConfig(Config),
   RevertConfig(),
   Unsuspend(Addr),
-  CreatePartition(PartitionCreationParams),
-  CreateIndex(IndexCreationParams),
   DeleteIndex(String),
+}
+
+#[cw_serde]
+pub enum ClientMsg {
+  Update(UpdateParams),
+  Delete(Addr),
+  Flag(FlagParams),
 }
 
 #[cw_serde]
@@ -40,14 +52,6 @@ pub struct FlagParams {
   pub suspend: Option<bool>,
   pub reason: Option<String>,
   pub code: Option<u32>,
-}
-
-#[cw_serde]
-pub enum ClientMsg {
-  Create(CreationParams),
-  Update(UpdateParams),
-  Delete(Addr),
-  Flag(FlagParams),
 }
 
 #[cw_serde]
@@ -243,6 +247,7 @@ pub enum PartitionSelector {
 pub struct PartitionMetadata {
   pub name: String,
   pub description: Option<String>,
+  pub created_at: Timestamp,
 }
 
 #[cw_serde]
