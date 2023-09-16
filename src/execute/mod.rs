@@ -1,5 +1,2 @@
 pub mod admin;
-pub mod create;
-pub mod delete;
-pub mod flag;
-pub mod update;
+pub mod client;

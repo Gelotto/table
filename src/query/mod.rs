@@ -1,6 +1,8 @@
+mod groups;
 mod indices;
-mod partition;
+mod partitions;
 pub mod read;
 
+pub use groups::query_groups as groups;
 pub use indices::query_indices as indices;
-pub use partition::query_partition as partition;
+pub use partitions::query_partitions as partitions;

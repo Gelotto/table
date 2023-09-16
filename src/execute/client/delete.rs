@@ -8,11 +8,12 @@ use crate::{
   models::ContractFlag,
   msg::IndexType,
   state::{
-    ensure_is_authorized_owner, load_contract_id, ContractID, CONTRACT_ADDR_2_ID, CONTRACT_DYN_METADATA,
-    CONTRACT_ID_2_ADDR, CONTRACT_INDEXED_KEYS, CONTRACT_METADATA, CONTRACT_SUSPENSIONS, CONTRACT_TAGS, IX_CODE_ID,
-    IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES,
-    PARTITION_TAG_COUNTS, REL_ADDR_2_CONTRACT_ID, REL_CONTRACT_ID_2_ADDR, VALUES_BOOL, VALUES_STRING, VALUES_TIME,
-    VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8,
+    ensure_is_authorized_owner, load_contract_id, remove_from_group, ContractID, CONTRACT_ADDR_2_ID,
+    CONTRACT_DYN_METADATA, CONTRACT_GROUP_IDS, CONTRACT_ID_2_ADDR, CONTRACT_INDEX_TYPES, CONTRACT_METADATA,
+    CONTRACT_SUSPENSIONS, CONTRACT_TAGS, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_TAG,
+    IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, PARTITION_TAG_COUNTS, REL_ADDR_2_CONTRACT_ID,
+    REL_CONTRACT_ID_2_ADDR, VALUES_BOOL, VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64,
+    VALUES_U8,
   },
 };
 
@@ -39,8 +40,24 @@ pub fn on_execute(
   delete_from_tags(deps.storage, contract_id)?;
   delete_from_relationships(deps.storage, contract_id)?;
   delete_from_partition(deps.storage, &contract_addr, contract_id)?;
+  delete_from_groups(deps.storage, contract_id)?;
 
   Ok(Response::new().add_attribute("action", action))
+}
+
+fn delete_from_groups(
+  storage: &mut dyn Storage,
+  contract_id: ContractID,
+) -> Result<(), ContractError> {
+  for maybe_group_id in CONTRACT_GROUP_IDS
+    .prefix(contract_id)
+    .keys(storage, None, None, Order::Ascending)
+    .collect::<Vec<StdResult<_>>>()
+  {
+    let group_id = maybe_group_id?;
+    remove_from_group(storage, group_id, contract_id)?;
+  }
+  Ok(())
 }
 
 fn delete_from_partition(
@@ -138,14 +155,14 @@ fn delete_from_indices(
   IX_REV.remove(storage, (p, up_meta.rev.into(), id));
 
   // Remove from custom indices
-  for result in CONTRACT_INDEXED_KEYS
+  for result in CONTRACT_INDEX_TYPES
     .prefix(id)
     .range(storage, None, None, Order::Ascending)
     .collect::<Vec<StdResult<_>>>()
   {
     let (index_name, index_type) = result?;
 
-    CONTRACT_INDEXED_KEYS.remove(storage, (id, &index_name));
+    CONTRACT_INDEX_TYPES.remove(storage, (id, &index_name));
 
     match index_type {
       IndexType::String => VALUES_STRING.remove(storage, (id, &index_name)),

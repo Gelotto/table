@@ -4,11 +4,11 @@ use cw_lib::models::Owner;
 
 use crate::{
   error::ContractError,
-  models::{ContractMetadataView, Verbosity},
+  models::{ContractMetadataView, Details},
   state::{GroupID, PartitionID},
 };
 
-pub type Cursor = (u16, String, Uint64);
+pub type Cursor = (PartitionID, String, Uint64);
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -18,8 +18,8 @@ pub struct InstantiateMsg {
 #[cw_serde]
 pub enum AdminMsg {
   UpdateInfo(TableInfo),
-  Partition(Addr, PartitionSelector),
-  Group(Addr, GroupUpdates),
+  SetPartition(Addr, PartitionSelector),
+  SetGroups(Addr, GroupUpdates),
   UpdateConfig(Config),
   RevertConfig(),
   Unsuspend(Addr),
@@ -43,12 +43,17 @@ pub struct FlagParams {
 }
 
 #[cw_serde]
-pub enum ExecuteMsg {
-  Admin(AdminMsg),
+pub enum ClientMsg {
   Create(CreationParams),
   Update(UpdateParams),
   Delete(Addr),
   Flag(FlagParams),
+}
+
+#[cw_serde]
+pub enum ExecuteMsg {
+  Admin(AdminMsg),
+  Client(ClientMsg),
 }
 
 #[cw_serde]
@@ -60,16 +65,35 @@ pub enum ReadMsg {
 
 #[cw_serde]
 pub enum QueryMsg {
-  Indices(),
-  Partition(PartitionSelector),
   Read(ReadMsg),
+  Indices {
+    cursor: Option<String>,
+    desc: Option<bool>,
+  },
+  Partitions {
+    cursor: Option<PartitionID>,
+    desc: Option<bool>,
+  },
+  Groups {
+    cursor: Option<GroupID>,
+    desc: Option<bool>,
+  },
 }
 
 #[cw_serde]
 pub struct MigrateMsg {}
 
 #[cw_serde]
-pub struct IndicesResponse(pub Vec<IndexMetadata>);
+pub struct IndicesResponse {
+  pub indices: Vec<IndexMetadata>,
+  pub cursor: Option<String>,
+}
+
+#[cw_serde]
+pub struct GroupsResponse {
+  pub groups: Vec<GroupMetadataView>,
+  pub cursor: Option<GroupID>,
+}
 
 #[cw_serde]
 pub struct TagCount {
@@ -78,11 +102,17 @@ pub struct TagCount {
 }
 
 #[cw_serde]
-pub struct PartitionResponse {
+pub struct PartitionView {
+  pub id: PartitionID,
   pub size: Uint64,
-  pub tags: Vec<TagCount>,
   pub description: Option<String>,
   pub name: String,
+}
+
+#[cw_serde]
+pub struct PartitionsResponse {
+  pub partitions: Vec<PartitionView>,
+  pub cursor: Option<PartitionID>,
 }
 
 #[cw_serde]
@@ -225,6 +255,7 @@ pub struct TableInfo {
 pub struct IndexMetadata {
   pub index_type: IndexType,
   pub name: String,
+  pub size: Uint64,
 }
 
 #[cw_serde]
@@ -247,7 +278,17 @@ pub enum GroupSelector {
 
 #[cw_serde]
 pub struct GroupMetadata {
+  pub name: String,
+  pub created_at: Timestamp,
+  pub description: Option<String>,
+  pub size: Uint64,
+}
+
+#[cw_serde]
+pub struct GroupMetadataView {
   pub id: u32,
+  pub name: String,
+  pub created_at: Timestamp,
   pub description: Option<String>,
   pub size: Uint64,
 }
@@ -280,8 +321,8 @@ pub struct ReadTagsParams {
   pub cursors: Option<Vec<Uint64>>,
   pub desc: Option<bool>,
   pub limit: Option<u32>,
-  pub partition: u16,
-  pub verbosity: Option<Verbosity>,
+  pub partition: PartitionID,
+  pub details: Option<Details>,
 }
 
 #[cw_serde]
@@ -316,16 +357,15 @@ pub struct IndexCreationParams {
 pub enum IndexQueryParams {
   Equals(String),
   Between(Range),
-  // Tags(TagQueryParams),
 }
 
 #[cw_serde]
 pub struct ReadIndexParams {
   pub index: IndexName,
-  pub partition: u16,
+  pub partition: PartitionID,
   pub params: IndexQueryParams,
   pub desc: Option<bool>,
   pub limit: Option<u32>,
   pub cursor: Option<Cursor>,
-  pub verbosity: Option<Verbosity>,
+  pub details: Option<Details>,
 }

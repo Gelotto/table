@@ -21,6 +21,6 @@ pub fn parse_bool(s: String) -> Result<u8, ContractError> {
   })
 }
 
-pub fn build_index_name(name: &String) -> String {
+pub fn build_index_storage_key(name: &String) -> String {
   format!("_ix_{}", name)
 }

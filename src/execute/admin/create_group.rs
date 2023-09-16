@@ -8,7 +8,7 @@ use crate::{
 
 pub fn on_execute(
   deps: DepsMut,
-  _env: Env,
+  env: Env,
   info: MessageInfo,
   params: GroupCreationParams,
 ) -> Result<Response, ContractError> {
@@ -29,9 +29,10 @@ pub fn on_execute(
       })
     } else {
       Ok(GroupMetadata {
-        id: group_id,
         description: params.description,
+        created_at: env.block.time,
         size: Uint64::zero(),
+        name,
       })
     }
   })?;

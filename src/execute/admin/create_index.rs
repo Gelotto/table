@@ -1,4 +1,4 @@
-use cosmwasm_std::{DepsMut, Env, MessageInfo, Response};
+use cosmwasm_std::{DepsMut, Env, MessageInfo, Response, Uint64};
 
 use crate::{
   error::ContractError,
@@ -26,6 +26,7 @@ pub fn on_execute(
         })
       } else {
         Ok(IndexMetadata {
+          size: Uint64::zero(),
           index_type: params.index_type,
           name: params.name,
         })

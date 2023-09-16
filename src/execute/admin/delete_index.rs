@@ -5,7 +5,7 @@ use crate::{
   error::ContractError,
   msg::IndexType,
   state::{ensure_is_authorized_owner, ContractID, PartitionID, INDEX_METADATA},
-  util::build_index_name,
+  util::build_index_storage_key,
 };
 
 pub fn on_execute(
@@ -21,7 +21,7 @@ pub fn on_execute(
   if let Some(meta) = INDEX_METADATA.may_load(deps.storage, index_name.clone())? {
     INDEX_METADATA.remove(deps.storage, index_name.clone());
 
-    let map_name = &build_index_name(&index_name);
+    let map_name = &build_index_storage_key(&index_name);
 
     match meta.index_type {
       IndexType::String => {

@@ -1,11 +1,11 @@
-use crate::models::{ContractMetadataView, ContractMetadataViewDetails, DynamicContractMetadata, ReplyJob, Verbosity};
+use crate::models::{ContractMetadataView, ContractMetadataViewDetails, Details, DynamicContractMetadata, ReplyJob};
 use crate::msg::{
   Config, ContractRecord, GroupMetadata, GroupSelector, IndexMetadata, IndexType, InstantiateMsg, PartitionMetadata,
   PartitionSelector, TableInfo,
 };
 use crate::{error::ContractError, models::ContractMetadata};
 use cosmwasm_std::{
-  to_binary, Addr, Binary, DepsMut, Empty, Env, MessageInfo, QuerierWrapper, Storage, Timestamp, Uint128, Uint64,
+  to_binary, Addr, Binary, DepsMut, Empty, Env, MessageInfo, Order, QuerierWrapper, Storage, Timestamp, Uint128, Uint64,
 };
 use cw_acl::client::Acl;
 use cw_lib::models::Owner;
@@ -14,10 +14,11 @@ use cw_storage_plus::{Item, Map};
 // TODO: store size of each partition Map<u16, Uint64>
 // TODO: add str prefix to custom index names
 
-pub type PartitionID = u16;
+pub type PartitionID = u32;
 pub type GroupID = u32;
 pub type ContractID = u64;
 pub type IndexMap<K> = Map<'static, K, u8>;
+pub type CustomIndexMap<'a, T> = Map<'a, (PartitionID, T, ContractID), u8>;
 
 // Marker/dummy value for IndexMap values
 pub const X: u8 = 1;
@@ -79,7 +80,8 @@ pub const GROUP_ID_COUNTER: Item<GroupID> = Item::new("group_id_counter");
 pub const GROUP_NAME_2_ID: Map<String, GroupID> = Map::new("group_name_2_id");
 
 // Lookup table for finding names/keys of indexed values for a given contract ID
-pub const CONTRACT_INDEXED_KEYS: Map<(ContractID, &String), IndexType> = Map::new("contract_indexed_keys");
+pub const CONTRACT_INDEX_TYPES: Map<(ContractID, &String), IndexType> = Map::new("contract_index_types");
+pub const CONTRACT_GROUP_IDS: IndexMap<(ContractID, GroupID)> = Map::new("contract_groups");
 
 // Metadata for custom indices.
 pub const INDEX_METADATA: Map<String, IndexMetadata> = Map::new("index_metadata");
@@ -138,8 +140,9 @@ pub fn build_contract_metadata_view(
   let meta = CONTRACT_METADATA.load(storage, id)?;
   let dyn_meta = CONTRACT_DYN_METADATA.load(storage, id)?;
   Ok(ContractMetadataView {
-    created_at: meta.created_at,
     partition: meta.partition,
+    groups: load_contract_group_ids(storage, id)?,
+    created_at: meta.created_at,
     updated_at: dyn_meta.updated_at,
     rev: dyn_meta.rev.into(),
     details: if with_details {
@@ -349,19 +352,15 @@ pub fn decrement_tag_count(
 pub fn load_contract_records(
   storage: &dyn Storage,
   contract_ids: &Vec<u64>,
-  maybe_verbosity: Option<Verbosity>,
+  maybe_detail_level: Option<Details>,
 ) -> Result<Vec<ContractRecord>, ContractError> {
   let mut contracts: Vec<ContractRecord> = Vec::with_capacity(contract_ids.len());
 
   for id in contract_ids.iter() {
     let record = ContractRecord {
       address: load_contract_addr(storage, *id)?,
-      meta: if let Some(verbosity) = &maybe_verbosity {
-        Some(build_contract_metadata_view(
-          storage,
-          *id,
-          *verbosity == Verbosity::Full,
-        )?)
+      meta: if let Some(level) = &maybe_detail_level {
+        Some(build_contract_metadata_view(storage, *id, *level == Details::Full)?)
       } else {
         None
       },
@@ -414,6 +413,7 @@ pub fn append_group(
   }
 
   IX_GROUP.save(storage, (group_id, contract_id), &X)?;
+  CONTRACT_GROUP_IDS.save(storage, (contract_id, group_id), &X)?;
 
   GROUP_METADATA.update(storage, group_id, |maybe_meta| -> Result<_, ContractError> {
     if let Some(mut meta) = maybe_meta {
@@ -443,6 +443,7 @@ pub fn remove_from_group(
   }
 
   IX_GROUP.remove(storage, (group_id, contract_id));
+  CONTRACT_GROUP_IDS.remove(storage, (contract_id, group_id));
 
   GROUP_METADATA.update(storage, group_id, |maybe_meta| -> Result<_, ContractError> {
     if let Some(mut meta) = maybe_meta {
@@ -460,4 +461,21 @@ pub fn remove_from_group(
     }
   })?;
   Ok(())
+}
+
+pub fn load_contract_group_ids(
+  storage: &dyn Storage,
+  contract_id: ContractID,
+) -> Result<Vec<GroupID>, ContractError> {
+  let mut group_ids: Vec<GroupID> = Vec::with_capacity(2);
+  for result in CONTRACT_GROUP_IDS
+    .prefix(contract_id)
+    .keys(storage, None, None, Order::Ascending)
+  {
+    let group_id = result.map_err(|e| ContractError::UnexpectedError {
+      reason: format!("error loading contract {} group ids: {}", contract_id, e.to_string()),
+    })?;
+    group_ids.push(group_id);
+  }
+  Ok(group_ids)
 }

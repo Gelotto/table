@@ -6,12 +6,12 @@ use crate::{
   msg::{IndexType, PartitionSelector},
   state::{
     decrement_tag_count, ensure_contract_not_suspended, ensure_is_authorized_owner, ensure_partition_exists,
-    increment_tag_count, load_contract_id, resolve_partition_id, CONTRACT_DYN_METADATA, CONTRACT_INDEXED_KEYS,
-    CONTRACT_METADATA, CONTRACT_TAGS, IX_CODE_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_TAG, IX_UPDATED_AT,
-    IX_UPDATED_BY, PARTITION_SIZES, VALUES_BOOL, VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32,
-    VALUES_U64, VALUES_U8, X,
+    increment_tag_count, load_contract_id, resolve_partition_id, ContractID, CustomIndexMap, PartitionID,
+    CONTRACT_DYN_METADATA, CONTRACT_INDEX_TYPES, CONTRACT_METADATA, CONTRACT_TAGS, IX_CODE_ID, IX_CREATED_AT,
+    IX_CREATED_BY, IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, VALUES_BOOL, VALUES_STRING,
+    VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8, X,
   },
-  util::build_index_name,
+  util::build_index_storage_key,
 };
 
 /// Move the contract to a new partition.
@@ -54,9 +54,9 @@ pub fn on_execute(
 
 pub fn move_tags(
   storage: &mut dyn Storage,
-  contract_id: u64,
-  src: u16,
-  dst: u16,
+  contract_id: ContractID,
+  src: PartitionID,
+  dst: PartitionID,
 ) -> Result<(), ContractError> {
   for result in CONTRACT_TAGS
     .prefix(contract_id)
@@ -80,9 +80,9 @@ pub fn move_tags(
 
 pub fn update_contract_partition(
   storage: &mut dyn Storage,
-  contract_id: u64,
-  src: u16,
-  dst: u16,
+  contract_id: ContractID,
+  src: PartitionID,
+  dst: PartitionID,
 ) -> Result<(), ContractError> {
   move_standard_indices(storage, contract_id, src, dst)?;
   move_custom_indices(storage, contract_id, src, dst)?;
@@ -109,9 +109,9 @@ pub fn update_contract_partition(
 
 fn move_standard_indices(
   storage: &mut dyn Storage,
-  contract_id: u64,
-  src: u16,
-  dst: u16,
+  contract_id: ContractID,
+  src: PartitionID,
+  dst: PartitionID,
 ) -> Result<(), ContractError> {
   // Update core metadata indices
   let meta = CONTRACT_METADATA.load(storage, contract_id)?;
@@ -142,64 +142,64 @@ fn move_standard_indices(
 
 pub fn move_custom_indices(
   storage: &mut dyn Storage,
-  contract_id: u64,
-  src: u16,
-  dst: u16,
+  contract_id: ContractID,
+  src: PartitionID,
+  dst: PartitionID,
 ) -> Result<(), ContractError> {
-  let entries: Vec<(String, IndexType)> = CONTRACT_INDEXED_KEYS
+  let entries: Vec<(String, IndexType)> = CONTRACT_INDEX_TYPES
     .prefix(contract_id)
     .range(storage, None, None, Order::Ascending)
     .filter_map(|r| r.ok())
     .collect();
 
-  for (base_index_name, index_type) in entries.iter() {
-    let index_name = build_index_name(base_index_name);
+  for (index_name, index_type) in entries.iter() {
+    let index_storage_key = build_index_storage_key(index_name);
     match index_type {
       IndexType::String => {
-        let index: Map<(u16, &String, u64), u8> = Map::new(&index_name);
-        let value = VALUES_STRING.load(storage, (contract_id, &index_name))?;
+        let index: CustomIndexMap<&String> = Map::new(&index_storage_key);
+        let value = VALUES_STRING.load(storage, (contract_id, &index_storage_key))?;
         index.remove(storage, (src, &value, contract_id));
         index.save(storage, (dst, &value, contract_id), &X)?;
       },
       IndexType::Bool => {
-        let index: Map<(u16, u8, u64), u8> = Map::new(&index_name);
-        let value = VALUES_BOOL.load(storage, (contract_id, &index_name))?;
+        let index: CustomIndexMap<u8> = Map::new(&index_storage_key);
+        let value = VALUES_BOOL.load(storage, (contract_id, &index_storage_key))?;
         index.remove(storage, (src, value.into(), contract_id));
         index.save(storage, (dst, value.into(), contract_id), &X)?;
       },
       IndexType::Timestamp => {
-        let index: Map<(u16, u64, u64), u8> = Map::new(&index_name);
-        let value = VALUES_TIME.load(storage, (contract_id, &index_name))?;
+        let index: CustomIndexMap<u64> = Map::new(&index_storage_key);
+        let value = VALUES_TIME.load(storage, (contract_id, &index_storage_key))?;
         index.remove(storage, (src, value.nanos(), contract_id));
         index.save(storage, (dst, value.nanos(), contract_id), &X)?;
       },
       IndexType::Uint8 => {
-        let index: Map<(u16, u8, u64), u8> = Map::new(&index_name);
-        let value = VALUES_U8.load(storage, (contract_id, &index_name))?;
+        let index: CustomIndexMap<u8> = Map::new(&index_storage_key);
+        let value = VALUES_U8.load(storage, (contract_id, &index_storage_key))?;
         index.remove(storage, (src, value.into(), contract_id));
         index.save(storage, (dst, value.into(), contract_id), &X)?;
       },
       IndexType::Uint16 => {
-        let index: Map<(u16, u16, u64), u8> = Map::new(&index_name);
-        let value = VALUES_U16.load(storage, (contract_id, &index_name))?;
+        let index: CustomIndexMap<u16> = Map::new(&index_storage_key);
+        let value = VALUES_U16.load(storage, (contract_id, &index_storage_key))?;
         index.remove(storage, (src, value.into(), contract_id));
         index.save(storage, (dst, value.into(), contract_id), &X)?;
       },
       IndexType::Uint32 => {
-        let index: Map<(u16, u32, u64), u8> = Map::new(&index_name);
-        let value = VALUES_U32.load(storage, (contract_id, &index_name))?;
+        let index: CustomIndexMap<u32> = Map::new(&index_storage_key);
+        let value = VALUES_U32.load(storage, (contract_id, &index_storage_key))?;
         index.remove(storage, (src, value.into(), contract_id));
         index.save(storage, (dst, value.into(), contract_id), &X)?;
       },
       IndexType::Uint64 => {
-        let index: Map<(u16, u64, u64), u8> = Map::new(&index_name);
-        let value = VALUES_U64.load(storage, (contract_id, &index_name))?;
+        let index: CustomIndexMap<u64> = Map::new(&index_storage_key);
+        let value = VALUES_U64.load(storage, (contract_id, &index_storage_key))?;
         index.remove(storage, (src, value.into(), contract_id));
         index.save(storage, (dst, value.into(), contract_id), &X)?;
       },
       IndexType::Uint128 => {
-        let index: Map<(u16, u128, u64), u8> = Map::new(&index_name);
-        let value = VALUES_U128.load(storage, (contract_id, &index_name))?;
+        let index: CustomIndexMap<u128> = Map::new(&index_storage_key);
+        let value = VALUES_U128.load(storage, (contract_id, &index_storage_key))?;
         index.remove(storage, (src, value.into(), contract_id));
         index.save(storage, (dst, value.into(), contract_id), &X)?;
       },

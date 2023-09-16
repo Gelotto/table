@@ -1,7 +1,10 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Timestamp, Uint64};
 
-use crate::msg::CreationParams;
+use crate::{
+  msg::CreationParams,
+  state::{GroupID, PartitionID},
+};
 
 #[cw_serde]
 pub struct ContractFlag {
@@ -20,7 +23,7 @@ pub struct ContractMetadata {
   pub created_at: Timestamp,
   pub created_at_height: Uint64,
   pub is_managed: bool,
-  pub partition: u16,
+  pub partition: PartitionID,
 }
 
 #[cw_serde]
@@ -36,7 +39,8 @@ pub struct ContractMetadataViewDetails {
 
 #[cw_serde]
 pub struct ContractMetadataView {
-  pub partition: u16,
+  pub partition: PartitionID,
+  pub groups: Vec<GroupID>,
   pub created_at: Timestamp,
   pub updated_at: Timestamp,
   pub rev: Uint64,
@@ -57,7 +61,7 @@ pub enum ReplyJob {
 }
 
 #[cw_serde]
-pub enum Verbosity {
+pub enum Details {
   Basic,
   Full,
 }

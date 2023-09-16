@@ -3,7 +3,8 @@ use std::str::FromStr;
 
 use crate::msg::{Cursor, IndexName, IndexQueryParams, ReadIndexResponse};
 use crate::state::{
-  load_contract_records, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY,
+  load_contract_records, ContractID, CustomIndexMap, PartitionID, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT,
+  IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY,
 };
 use crate::util::{parse, parse_bool};
 use crate::{error::ContractError, msg::ReadIndexParams};
@@ -16,7 +17,7 @@ pub fn read_index(
 ) -> Result<ReadIndexResponse, ContractError> {
   // let limit = query.limit.unwrap_or(20).clamp(1, 200) as usize;
   // let desc = query.desc.unwrap_or(false);
-  let verbosity = query.verbosity.clone();
+  let details = query.details.clone();
 
   // Find matching contract ID's
   let (ids, cursor) = match query.params.clone() {
@@ -25,18 +26,24 @@ pub fn read_index(
   }?;
 
   // Convert contract ID's to Addrs
-  let contracts = load_contract_records(deps.storage, &ids, verbosity)?;
+  let contracts = load_contract_records(deps.storage, &ids, details)?;
 
   Ok(ReadIndexResponse { contracts, cursor })
 }
 
 fn build_range_bounds<'a, T>(
   order: Order,
-  partition: u16,
+  partition: PartitionID,
   range_start_value: T,
   range_stop_value: T,
   maybe_cursor: Option<Cursor>,
-) -> Result<(Option<Bound<'a, (u16, T, u64)>>, Option<Bound<'a, (u16, T, u64)>>), ContractError>
+) -> Result<
+  (
+    Option<Bound<'a, (PartitionID, T, u64)>>,
+    Option<Bound<'a, (PartitionID, T, u64)>>,
+  ),
+  ContractError,
+>
 where
   T: PrimaryKey<'a> + Prefixer<'a> + KeyDeserialize + FromStr,
 {
@@ -75,14 +82,14 @@ where
 
 fn build_range_bounds_str<'a>(
   order: Order,
-  partition: u16,
+  partition: PartitionID,
   range_start_value: Option<String>,
   range_stop_value: Option<String>,
   maybe_cursor: Option<Cursor>,
 ) -> Result<
   (
-    Option<Bound<'a, (u16, String, u64)>>,
-    Option<Bound<'a, (u16, String, u64)>>,
+    Option<Bound<'a, (PartitionID, String, u64)>>,
+    Option<Bound<'a, (PartitionID, String, u64)>>,
   ),
   ContractError,
 > {
@@ -166,9 +173,9 @@ fn build_start_stop_values_str(
 }
 
 fn next_page<'a, D>(
-  iter: Box<dyn Iterator<Item = StdResult<(u16, D, u64)>> + 'a>,
+  iter: Box<dyn Iterator<Item = StdResult<(PartitionID, D, ContractID)>> + 'a>,
   limit: usize,
-) -> Result<(Vec<u64>, Option<Cursor>), ContractError>
+) -> Result<(Vec<ContractID>, Option<Cursor>), ContractError>
 where
   D: ToString,
 {
@@ -177,8 +184,8 @@ where
   let mut cursor: Option<Cursor> = None;
 
   for item in iter.take(limit) {
-    let (group, value, contract_id) = item?;
-    cursor = Some((group, value.to_string(), Uint64::from(contract_id)));
+    let (partition, value, contract_id) = item?;
+    cursor = Some((partition, value.to_string(), Uint64::from(contract_id)));
     contract_ids.push(contract_id);
   }
 
@@ -242,49 +249,49 @@ fn get_contract_ids(
       next_page(index.keys(storage, min, max, order), limit)?
     },
     IndexName::String(index_name) => {
-      let index: Map<(u16, String, u64), u8> = Map::new(index_name.as_str());
+      let index: CustomIndexMap<String> = Map::new(index_name.as_str());
       let (start, stop) = build_start_stop_values_str(raw_start, raw_stop, exact)?;
       let (min, max) = build_range_bounds_str(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
     IndexName::Bool(index_name) => {
-      let index: Map<(u16, u8, u64), u8> = Map::new(index_name.as_str());
+      let index: CustomIndexMap<u8> = Map::new(index_name.as_str());
       let (start, stop) = build_start_stop_values(raw_start, u8::MIN, raw_stop, u8::MAX, exact, &parse_bool)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
     IndexName::Timestamp(index_name) => {
-      let index: Map<(u16, u64, u64), u8> = Map::new(index_name.as_str());
+      let index: CustomIndexMap<u64> = Map::new(index_name.as_str());
       let (start, stop) = build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
     IndexName::Uint8(index_name) => {
-      let index: Map<(u16, u8, u64), u8> = Map::new(index_name.as_str());
+      let index: CustomIndexMap<u8> = Map::new(index_name.as_str());
       let (start, stop) = build_start_stop_values(raw_start, u8::MIN, raw_stop, u8::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
     IndexName::Uint16(index_name) => {
-      let index: Map<(u16, u16, u64), u8> = Map::new(index_name.as_str());
+      let index: CustomIndexMap<u16> = Map::new(index_name.as_str());
       let (start, stop) = build_start_stop_values(raw_start, u16::MIN, raw_stop, u16::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
     IndexName::Uint32(index_name) => {
-      let index: Map<(u16, u32, u64), u8> = Map::new(index_name.as_str());
+      let index: CustomIndexMap<u32> = Map::new(index_name.as_str());
       let (start, stop) = build_start_stop_values(raw_start, u32::MIN, raw_stop, u32::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
     IndexName::Uint64(index_name) => {
-      let index: Map<(u16, u64, u64), u8> = Map::new(index_name.as_str());
+      let index: CustomIndexMap<u64> = Map::new(index_name.as_str());
       let (start, stop) = build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
     IndexName::Uint128(index_name) => {
-      let index: Map<(u16, u128, u64), u8> = Map::new(index_name.as_str());
+      let index: CustomIndexMap<u128> = Map::new(index_name.as_str());
       let (start, stop) = build_start_stop_values(raw_start, u128::MIN, raw_stop, u128::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
