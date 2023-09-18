@@ -1,20 +1,20 @@
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-use crate::msg::{Cursor, IndexName, IndexQueryParams, ReadIndexResponse};
+use crate::msg::{ContractsRangeResponse, Cursor, IndexName, IndexQueryParams};
 use crate::state::{
   load_contract_records, ContractID, CustomIndexMap, PartitionID, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT,
   IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY,
 };
 use crate::util::{parse, parse_bool};
-use crate::{error::ContractError, msg::ReadIndexParams};
+use crate::{error::ContractError, msg::RangeQueryParams};
 use cosmwasm_std::{Api, Deps, Order, StdResult, Storage, Uint64};
 use cw_storage_plus::{Bound, KeyDeserialize, Map, Prefixer, PrimaryKey};
 
-pub fn read_index(
+pub fn range(
   deps: Deps,
-  query: ReadIndexParams,
-) -> Result<ReadIndexResponse, ContractError> {
+  query: RangeQueryParams,
+) -> Result<ContractsRangeResponse, ContractError> {
   // let limit = query.limit.unwrap_or(20).clamp(1, 200) as usize;
   // let desc = query.desc.unwrap_or(false);
   let details = query.details.clone();
@@ -28,7 +28,7 @@ pub fn read_index(
   // Convert contract ID's to Addrs
   let contracts = load_contract_records(deps.storage, &ids, details)?;
 
-  Ok(ReadIndexResponse { contracts, cursor })
+  Ok(ContractsRangeResponse { contracts, cursor })
 }
 
 fn build_range_bounds<'a, T>(
@@ -64,8 +64,8 @@ where
     Order::Descending => {
       (
         // min
-        Some(Bound::Exclusive((
-          (partition, range_start_value, u64::MAX),
+        Some(Bound::Inclusive((
+          (partition, range_start_value, u64::MIN),
           PhantomData,
         ))),
         // max
@@ -195,7 +195,7 @@ where
 fn get_contract_ids(
   _api: &dyn Api,
   storage: &dyn Storage,
-  query: ReadIndexParams,
+  query: RangeQueryParams,
   raw_start: Option<String>,
   raw_stop: Option<String>,
   exact: bool,

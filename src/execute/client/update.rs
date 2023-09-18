@@ -1,12 +1,13 @@
 use crate::{
   error::ContractError,
   models::DynamicContractMetadata,
-  msg::{IndexType, KeyValue, TagUpdates, UpdateParams},
+  msg::{IndexType, KeyValue, Relationship, RelationshipUpdates, TagUpdates, UpdateParams},
   state::{
-    decrement_tag_count, ensure_contract_not_suspended, ensure_is_authorized_owner, increment_tag_count,
-    load_contract_id, ContractID, CustomIndexMap, PartitionID, CONTRACT_DYN_METADATA, CONTRACT_INDEX_TYPES,
-    CONTRACT_METADATA, INDEX_METADATA, IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, VALUES_BOOL, VALUES_STRING,
-    VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8, X,
+    decrement_tag_count, ensure_contract_not_suspended, ensure_sender_is_owner, increment_tag_count, load_contract_id,
+    ContractID, CustomIndexMap, PartitionID, CONTRACT_DYN_METADATA, CONTRACT_INDEX_TYPES, CONTRACT_METADATA,
+    CONTRACT_TAGS, INDEX_METADATA, IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, REL_ADDR_2_CONTRACT_ID,
+    REL_CONTRACT_ID_2_ADDR, VALUES_BOOL, VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64,
+    VALUES_U8, X,
   },
   util::build_index_storage_key,
 };
@@ -23,18 +24,19 @@ pub fn on_execute(
 
   // Get address of contract whose state we will update. If sender isn't the
   // contract itself, only allow sender if auth'd by owner address or ACL.
-  let contract_addr = if let Some(contract_addr) = params.contract {
-    ensure_is_authorized_owner(deps.storage, deps.querier, &info.sender, action)?;
-    deps.api.addr_validate(contract_addr.as_str())?
+  let contract_addr = if params.contract != info.sender {
+    ensure_sender_is_owner(deps.storage, deps.querier, &info.sender, action)?;
+    deps.api.addr_validate(params.contract.as_str())?
   } else {
     info.sender
   };
 
-  ensure_contract_not_suspended(deps.storage, &contract_addr)?;
-
   deps.api.addr_validate(params.initiator.as_str())?;
 
   let contract_id = load_contract_id(deps.storage, &contract_addr)?;
+
+  ensure_contract_not_suspended(deps.storage, contract_id)?;
+
   let partition = CONTRACT_METADATA.load(deps.storage, contract_id)?.partition;
   let initiator = params.initiator;
 
@@ -45,8 +47,13 @@ pub fn on_execute(
   }
 
   // Update tags
-  if let Some(tag_updates) = params.tags {
+  if let Some(tag_updates) = params.tags.clone() {
     update_tags(deps.storage, partition, contract_id, tag_updates)?;
+  }
+
+  // Update relationships
+  if let Some(rel_updates) = params.relationships.clone() {
+    update_relationships(deps.storage, contract_id, rel_updates)?;
   }
 
   Ok(Response::new().add_attributes(vec![attr("action", action)]))
@@ -94,16 +101,72 @@ fn update_tags(
   contract_id: ContractID,
   updates: TagUpdates,
 ) -> Result<(), ContractError> {
-  for tag in updates.remove.iter() {
-    IX_TAG.remove(storage, (partition, tag, contract_id));
-    decrement_tag_count(storage, partition, tag)?;
+  if let Some(tags_to_remove) = &updates.remove {
+    for tag in tags_to_remove.iter() {
+      IX_TAG.remove(storage, (partition, tag, contract_id));
+      CONTRACT_TAGS.remove(storage, (contract_id, tag.clone()));
+      decrement_tag_count(storage, partition, tag)?;
+    }
   }
 
-  for tag in updates.add.iter() {
-    IX_TAG.save(storage, (partition, tag, contract_id), &X)?;
-    increment_tag_count(storage, partition, tag)?;
+  if let Some(tags_to_add) = &updates.add {
+    for tag in tags_to_add.iter() {
+      IX_TAG.save(storage, (partition, tag, contract_id), &X)?;
+      CONTRACT_TAGS.save(storage, (contract_id, tag.clone()), &X)?;
+      increment_tag_count(storage, partition, tag)?;
+    }
   }
 
+  Ok(())
+}
+
+fn update_relationships(
+  storage: &mut dyn Storage,
+  contract_id: ContractID,
+  updates: RelationshipUpdates,
+) -> Result<(), ContractError> {
+  if let Some(rels) = &updates.remove {
+    for rel in rels.iter() {
+      remove_relationship(storage, contract_id, &rel)?;
+    }
+  }
+
+  if let Some(rels) = &updates.add {
+    for rel in rels.iter() {
+      set_relationship(storage, contract_id, &rel)?;
+    }
+  }
+
+  Ok(())
+}
+
+fn set_relationship(
+  storage: &mut dyn Storage,
+  contract_id: ContractID,
+  rel: &Relationship,
+) -> Result<(), ContractError> {
+  let addr_str = rel.address.to_string();
+  REL_ADDR_2_CONTRACT_ID.save(
+    storage,
+    (addr_str.clone(), rel.name.clone(), contract_id.to_string()),
+    &X,
+  )?;
+  REL_CONTRACT_ID_2_ADDR.save(storage, (contract_id, rel.name.clone(), addr_str.clone()), &X)?;
+  Ok(())
+}
+
+fn remove_relationship(
+  storage: &mut dyn Storage,
+  contract_id: ContractID,
+  rel: &Relationship,
+) -> Result<(), ContractError> {
+  let addr_str = rel.address.to_string();
+  if let Some(related_addr) =
+    REL_CONTRACT_ID_2_ADDR.may_load(storage, (contract_id, rel.name.clone(), addr_str.clone()))?
+  {
+    REL_ADDR_2_CONTRACT_ID.remove(storage, (addr_str.clone(), rel.name.clone(), contract_id.to_string()));
+    REL_CONTRACT_ID_2_ADDR.remove(storage, (contract_id, rel.name.clone(), related_addr.to_string()));
+  }
   Ok(())
 }
 

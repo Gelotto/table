@@ -1,5 +1,7 @@
-use cosmwasm_std::{Addr, StdError};
+use cosmwasm_std::StdError;
 use thiserror::Error;
+
+use crate::state::ContractID;
 
 #[derive(Debug, Error)]
 pub enum ContractError {
@@ -33,8 +35,8 @@ pub enum ContractError {
   #[error("CreateError: {reason:?}")]
   CreateError { reason: String },
 
-  #[error("ContractSuspended: contract {contract_addr:?} has been flagged and suspended")]
-  ContractSuspended { contract_addr: Addr },
+  #[error("ContractSuspended: contract {contract_id:?} has been flagged and suspended")]
+  ContractSuspended { contract_id: ContractID },
 }
 
 impl From<ContractError> for StdError {

@@ -3,7 +3,7 @@ use cosmwasm_std::{DepsMut, Env, MessageInfo, Response, Storage, Uint64};
 use crate::{
   error::ContractError,
   msg::{GroupCreationParams, GroupMetadata},
-  state::{ensure_is_authorized_owner, GroupID, GROUP_ID_COUNTER, GROUP_METADATA, GROUP_NAME_2_ID},
+  state::{ensure_sender_is_owner, GroupID, GROUP_ID_COUNTER, GROUP_METADATA, GROUP_NAME_2_ID},
 };
 
 pub fn on_execute(
@@ -14,7 +14,7 @@ pub fn on_execute(
 ) -> Result<Response, ContractError> {
   let action = "create_group";
 
-  ensure_is_authorized_owner(deps.storage, deps.querier, &info.sender, action)?;
+  ensure_sender_is_owner(deps.storage, deps.querier, &info.sender, action)?;
 
   let group_id = increment_next_group_id(deps.storage)?;
   let name = params.name.unwrap_or_else(|| group_id.to_string());

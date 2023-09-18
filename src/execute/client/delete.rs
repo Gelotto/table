@@ -8,12 +8,11 @@ use crate::{
   models::ContractFlag,
   msg::IndexType,
   state::{
-    ensure_is_authorized_owner, load_contract_id, remove_from_group, ContractID, CONTRACT_ADDR_2_ID,
-    CONTRACT_DYN_METADATA, CONTRACT_GROUP_IDS, CONTRACT_ID_2_ADDR, CONTRACT_INDEX_TYPES, CONTRACT_METADATA,
-    CONTRACT_SUSPENSIONS, CONTRACT_TAGS, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_TAG,
-    IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, PARTITION_TAG_COUNTS, REL_ADDR_2_CONTRACT_ID,
-    REL_CONTRACT_ID_2_ADDR, VALUES_BOOL, VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64,
-    VALUES_U8,
+    ensure_sender_is_owner, load_contract_id, remove_from_group, ContractID, CONTRACT_ADDR_2_ID, CONTRACT_DYN_METADATA,
+    CONTRACT_GROUP_IDS, CONTRACT_ID_2_ADDR, CONTRACT_INDEX_TYPES, CONTRACT_METADATA, CONTRACT_SUSPENSIONS,
+    CONTRACT_TAGS, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_TAG, IX_UPDATED_AT,
+    IX_UPDATED_BY, PARTITION_SIZES, PARTITION_TAG_COUNTS, REL_ADDR_2_CONTRACT_ID, REL_CONTRACT_ID_2_ADDR, VALUES_BOOL,
+    VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8,
   },
 };
 
@@ -31,7 +30,7 @@ pub fn on_execute(
   // If sender isn't the contract itself, only allow sender if auth'd by owner
   // address or ACL.
   if contract_addr != info.sender {
-    ensure_is_authorized_owner(deps.storage, deps.querier, &info.sender, action)?;
+    ensure_sender_is_owner(deps.storage, deps.querier, &info.sender, action)?;
   };
 
   let contract_id = load_contract_id(deps.storage, &contract_addr)?;
@@ -76,7 +75,7 @@ fn delete_from_partition(
   CONTRACT_ADDR_2_ID.remove(storage, contract_addr);
 
   // Clear suspension flags
-  CONTRACT_SUSPENSIONS.remove(storage, contract_addr);
+  CONTRACT_SUSPENSIONS.remove(storage, id);
 
   // Decrement parition size
   PARTITION_SIZES.update(storage, meta.partition, |maybe_n| -> Result<_, ContractError> {

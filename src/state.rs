@@ -46,7 +46,7 @@ pub const CONTRACT_METADATA: Map<ContractID, ContractMetadata> = Map::new("contr
 pub const CONTRACT_DYN_METADATA: Map<ContractID, DynamicContractMetadata> = Map::new("contract_dyn_meta");
 
 // Flags indicating that a given contract is suspended
-pub const CONTRACT_SUSPENSIONS: Map<&Addr, bool> = Map::new("contract_suspensions");
+pub const CONTRACT_SUSPENSIONS: Map<ContractID, bool> = Map::new("contract_suspensions");
 
 // Lookup table for finding all tags associated with a contract ID
 pub const CONTRACT_TAGS: IndexMap<(ContractID, String)> = Map::new("contract_tags");
@@ -151,21 +151,31 @@ pub fn build_contract_metadata_view(
   with_details: bool,
 ) -> Result<ContractMetadataView, ContractError> {
   let meta = CONTRACT_METADATA.load(storage, id)?;
-  let dyn_meta = CONTRACT_DYN_METADATA.load(storage, id)?;
+  let (updated_at, rev, updated_at_height, updated_by) = match CONTRACT_DYN_METADATA.may_load(storage, id)? {
+    Some(meta) => (
+      Some(meta.updated_at),
+      Some(meta.rev),
+      Some(meta.updated_at_height),
+      Some(meta.updated_by),
+    ),
+    None => (None, None, None, None),
+  };
+
   Ok(ContractMetadataView {
+    is_suspended: is_suspended(storage, id)?,
     partition: meta.partition,
-    groups: load_contract_group_ids(storage, id)?,
     created_at: meta.created_at,
-    updated_at: dyn_meta.updated_at,
-    rev: dyn_meta.rev.into(),
+    updated_at,
+    rev,
     details: if with_details {
       Some(ContractMetadataViewDetails {
+        groups: load_contract_group_ids(storage, id)?,
         code_id: meta.code_id,
         created_at_height: meta.created_at_height,
         created_by: meta.created_by,
         is_managed: meta.is_managed,
-        updated_at_height: dyn_meta.updated_at_height,
-        updated_by: dyn_meta.updated_by,
+        updated_at_height,
+        updated_by,
         id: id.into(),
       })
     } else {
@@ -174,7 +184,7 @@ pub fn build_contract_metadata_view(
   })
 }
 
-pub fn ensure_is_authorized_owner(
+pub fn ensure_sender_is_owner(
   storage: &dyn Storage,
   querier: QuerierWrapper<Empty>,
   principal: &Addr,
@@ -207,15 +217,23 @@ pub fn ensure_partition_exists(
   Ok(())
 }
 
+pub fn is_suspended(
+  storage: &dyn Storage,
+  contract_id: ContractID,
+) -> Result<bool, ContractError> {
+  if let Some(is_suspended) = CONTRACT_SUSPENSIONS.may_load(storage, contract_id)? {
+    return Ok(is_suspended);
+  }
+  Ok(false)
+}
+
 pub fn ensure_contract_not_suspended(
   storage: &dyn Storage,
-  contract_addr: &Addr,
+  contract_id: ContractID,
 ) -> Result<(), ContractError> {
-  if let Some(is_suspended) = CONTRACT_SUSPENSIONS.may_load(storage, contract_addr)? {
+  if let Some(is_suspended) = CONTRACT_SUSPENSIONS.may_load(storage, contract_id)? {
     if is_suspended {
-      return Err(ContractError::ContractSuspended {
-        contract_addr: contract_addr.clone(),
-      });
+      return Err(ContractError::ContractSuspended { contract_id });
     }
   }
   Ok(())
@@ -360,6 +378,22 @@ pub fn decrement_tag_count(
         ),
       })
   })
+}
+
+pub fn load_one_contract_record(
+  storage: &dyn Storage,
+  id: u64,
+  maybe_detail_level: Option<Details>,
+) -> Result<ContractRecord, ContractError> {
+  let record = ContractRecord {
+    address: load_contract_addr(storage, id)?,
+    meta: if let Some(level) = &maybe_detail_level {
+      Some(build_contract_metadata_view(storage, id, *level == Details::Full)?)
+    } else {
+      None
+    },
+  };
+  Ok(record)
 }
 
 pub fn load_contract_records(
@@ -528,4 +562,11 @@ fn increment_next_partition_id(storage: &mut dyn Storage) -> Result<PartitionID,
       reason: "unexpected overflow incrementing partition ID counter".to_owned(),
     })
   })
+}
+
+pub fn exists_contract_address(
+  storage: &dyn Storage,
+  addr: &Addr,
+) -> bool {
+  CONTRACT_ADDR_2_ID.has(storage, addr)
 }

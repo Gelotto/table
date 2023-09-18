@@ -14,17 +14,24 @@ pub fn query_groups(
   maybe_cursor: Option<GroupID>,
   maybe_desc: Option<bool>,
 ) -> Result<GroupsResponse, ContractError> {
-  let mut groups: Vec<GroupMetadataView> = Vec::with_capacity(4);
-
   let desc = maybe_desc.unwrap_or(false);
   let order = if desc { Order::Descending } else { Order::Ascending };
+  let (min, max) = match order {
+    Order::Ascending => (
+      maybe_cursor
+        .and_then(|group_id| Some(Bound::Exclusive((group_id, PhantomData))))
+        .or_else(|| Some(Bound::Inclusive((GroupID::MIN, PhantomData)))),
+      None,
+    ),
+    Order::Descending => (
+      None,
+      maybe_cursor
+        .and_then(|group_id| Some(Bound::Exclusive((group_id, PhantomData))))
+        .or_else(|| Some(Bound::Inclusive((GroupID::MAX, PhantomData)))),
+    ),
+  };
 
-  let mut min = Some(Bound::Exclusive((maybe_cursor.unwrap_or_default(), PhantomData)));
-  let mut max: Option<Bound<GroupID>> = None;
-
-  if desc {
-    (min, max) = (max, min)
-  }
+  let mut groups: Vec<GroupMetadataView> = Vec::with_capacity(4);
 
   for result in GROUP_METADATA.range(deps.storage, min, max, order).take(PAGE_SIZE) {
     let (id, meta) = result?;

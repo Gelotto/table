@@ -21,12 +21,12 @@ pub struct InstantiateMsg {
 
 #[cw_serde]
 pub enum AdminMsg {
-  Create(CreationParams),
+  CreateGroup(GroupCreationParams),
   CreatePartition(PartitionCreationParams),
   CreateIndex(IndexCreationParams),
   UpdateInfo(TableInfo),
   SetPartition(Addr, PartitionSelector),
-  SetGroups(Addr, GroupUpdates),
+  AssignGroups(GroupUpdates),
   UpdateConfig(Config),
   RevertConfig(),
   Unsuspend(Addr),
@@ -35,6 +35,7 @@ pub enum AdminMsg {
 
 #[cw_serde]
 pub enum ClientMsg {
+  Create(CreationParams),
   Update(UpdateParams),
   Delete(Addr),
   Flag(FlagParams),
@@ -42,6 +43,7 @@ pub enum ClientMsg {
 
 #[cw_serde]
 pub struct GroupUpdates {
+  pub contract: Addr,
   pub remove: Option<Vec<GroupSelector>>,
   pub add: Option<Vec<GroupSelector>>,
 }
@@ -61,15 +63,16 @@ pub enum ExecuteMsg {
 }
 
 #[cw_serde]
-pub enum ReadMsg {
-  Index(ReadIndexParams),
-  Tags(ReadTagsParams),
-  Relationships(ReadRelationshipsParams),
+pub enum ContractsQueryMsg {
+  Range(RangeQueryParams),
+  WithTag(TagQueryParams),
+  InGroup(GroupQueryParams),
+  ByAddresses(AddressesQueryParams),
+  RelatedTo(RelationshipQueryParams),
 }
 
 #[cw_serde]
-pub enum QueryMsg {
-  Read(ReadMsg),
+pub enum TableQueryMsg {
   Indices {
     cursor: Option<String>,
     desc: Option<bool>,
@@ -82,6 +85,21 @@ pub enum QueryMsg {
     cursor: Option<GroupID>,
     desc: Option<bool>,
   },
+  Tags(TableTagsQueryParams),
+}
+
+#[cw_serde]
+pub enum ContractQueryMsg {
+  Relationships(ContractRelationshipsQueryParams),
+  Groups(ContractGroupsQueryParams),
+  Tags(ContractTagsQueryParams),
+}
+
+#[cw_serde]
+pub enum QueryMsg {
+  Table(TableQueryMsg),
+  Contracts(ContractsQueryMsg),
+  Contract(ContractQueryMsg),
 }
 
 #[cw_serde]
@@ -97,6 +115,12 @@ pub struct IndicesResponse {
 pub struct GroupsResponse {
   pub groups: Vec<GroupMetadataView>,
   pub cursor: Option<GroupID>,
+}
+
+#[cw_serde]
+pub struct TagsResponse {
+  pub tags: Vec<TagCount>,
+  pub cursor: Option<String>,
 }
 
 #[cw_serde]
@@ -126,15 +150,34 @@ pub struct ContractRecord {
 }
 
 #[cw_serde]
-pub struct ReadIndexResponse {
+pub struct ContractsByAddressResponse {
+  pub contracts: Vec<ContractRecord>,
+  pub cursor: Option<u32>,
+}
+
+#[cw_serde]
+pub struct ContractsRangeResponse {
   pub contracts: Vec<ContractRecord>,
   pub cursor: Option<Cursor>,
 }
 
 #[cw_serde]
-pub struct ReadTagsResponse {
-  pub contracts: Vec<Vec<Addr>>,
-  pub cursors: Vec<Option<Uint64>>,
+pub struct ContractsByTagResponse {
+  pub contracts: Vec<ContractRecord>,
+  pub cursor: Option<Uint64>,
+}
+
+#[cw_serde]
+pub struct ContractsByGroupResponse {
+  pub contracts: Vec<ContractRecord>,
+  pub cursor: Option<Uint64>,
+}
+
+#[cw_serde]
+pub struct FullRelationship {
+  pub contract: Addr,
+  pub name: String,
+  pub address: Addr,
 }
 
 #[cw_serde]
@@ -144,7 +187,31 @@ pub struct Relationship {
 }
 
 #[cw_serde]
-pub struct ReadRelationshipsResponse {
+pub struct RelatedContract {
+  pub relationships: Vec<String>,
+  pub contract: ContractRecord,
+}
+
+#[cw_serde]
+pub struct ReadRelationshipResponse {
+  pub contracts: Vec<RelatedContract>,
+  pub cursor: Option<(String, String)>,
+}
+
+#[cw_serde]
+pub struct ContractGroupsResponse {
+  pub groups: Vec<GroupMetadataView>,
+  pub cursor: Option<GroupID>,
+}
+
+#[cw_serde]
+pub struct ContractTagsResponse {
+  pub tags: Vec<String>,
+  pub cursor: Option<String>,
+}
+
+#[cw_serde]
+pub struct ContractRelationshipsResponse {
   pub relationships: Vec<Relationship>,
   pub cursor: Option<(String, String)>,
 }
@@ -164,10 +231,11 @@ pub struct CreationParams {
 
 #[cw_serde]
 pub struct UpdateParams {
+  pub contract: Addr,
   pub initiator: Addr,
   pub values: Option<Vec<KeyValue>>,
   pub tags: Option<TagUpdates>,
-  pub contract: Option<Addr>,
+  pub relationships: Option<RelationshipUpdates>,
 }
 
 #[cw_serde]
@@ -264,9 +332,16 @@ pub struct IndexMetadata {
 }
 
 #[cw_serde]
+#[derive(Default)]
 pub struct TagUpdates {
-  pub remove: Vec<String>,
-  pub add: Vec<String>,
+  pub remove: Option<Vec<String>>,
+  pub add: Option<Vec<String>>,
+}
+
+#[cw_serde]
+pub struct RelationshipUpdates {
+  pub remove: Option<Vec<Relationship>>,
+  pub add: Option<Vec<Relationship>>,
 }
 
 #[cw_serde]
@@ -321,13 +396,69 @@ pub struct Range {
 }
 
 #[cw_serde]
-pub struct ReadTagsParams {
-  pub tags: Vec<String>,
-  pub cursors: Option<Vec<Uint64>>,
+pub struct ContractGroupsQueryParams {
+  pub contract: Addr,
+  pub cursor: Option<GroupID>,
+  pub desc: Option<bool>,
+  pub limit: Option<u32>,
+  pub partition: PartitionID,
+}
+
+#[cw_serde]
+pub struct ContractTagsQueryParams {
+  pub contract: Addr,
+  pub cursor: Option<String>,
+  pub desc: Option<bool>,
+  pub limit: Option<u32>,
+  pub partition: PartitionID,
+}
+
+#[cw_serde]
+pub struct ContractRelationshipsQueryParams {
+  pub contract: Addr,
+  pub name: Option<String>,
+  pub cursor: Option<(String, String)>,
+  pub desc: Option<bool>,
+  pub limit: Option<u32>,
+  pub partition: PartitionID,
+}
+
+#[cw_serde]
+pub struct GroupQueryParams {
+  pub group: GroupSelector,
+  pub cursor: Option<Uint64>,
   pub desc: Option<bool>,
   pub limit: Option<u32>,
   pub partition: PartitionID,
   pub details: Option<Details>,
+}
+
+#[cw_serde]
+pub struct AddressesQueryParams {
+  pub contracts: Vec<Addr>,
+  pub cursor: Option<u32>,
+  pub desc: Option<bool>,
+  pub limit: Option<u32>,
+  pub partition: PartitionID,
+  pub details: Option<Details>,
+}
+
+#[cw_serde]
+pub struct TagQueryParams {
+  pub tag: String,
+  pub cursor: Option<Uint64>,
+  pub desc: Option<bool>,
+  pub limit: Option<u32>,
+  pub partition: PartitionID,
+  pub details: Option<Details>,
+}
+
+#[cw_serde]
+pub struct TableTagsQueryParams {
+  pub cursor: Option<String>,
+  pub desc: Option<bool>,
+  pub limit: Option<u32>,
+  pub partition: PartitionID,
 }
 
 #[cw_serde]
@@ -337,13 +468,13 @@ pub enum RelationshipSide {
 }
 
 #[cw_serde]
-pub struct ReadRelationshipsParams {
-  pub side: RelationshipSide,
-  pub names: Option<Vec<String>>,
+pub struct RelationshipQueryParams {
+  pub address: Addr,
   pub cursor: Option<(String, String)>,
   pub desc: Option<bool>,
   pub limit: Option<u32>,
-  pub partition: u16,
+  pub partition: PartitionID,
+  pub details: Option<Details>,
 }
 
 #[cw_serde]
@@ -365,7 +496,7 @@ pub enum IndexQueryParams {
 }
 
 #[cw_serde]
-pub struct ReadIndexParams {
+pub struct RangeQueryParams {
   pub index: IndexName,
   pub partition: PartitionID,
   pub params: IndexQueryParams,

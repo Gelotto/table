@@ -33,17 +33,18 @@ pub struct ContractMetadataViewDetails {
   pub code_id: Uint64,
   pub created_by: Addr,
   pub created_at_height: Uint64,
-  pub updated_at_height: Uint64,
-  pub updated_by: Addr,
+  pub updated_at_height: Option<Uint64>,
+  pub updated_by: Option<Addr>,
+  pub groups: Vec<GroupID>,
 }
 
 #[cw_serde]
 pub struct ContractMetadataView {
   pub partition: PartitionID,
-  pub groups: Vec<GroupID>,
   pub created_at: Timestamp,
-  pub updated_at: Timestamp,
-  pub rev: Uint64,
+  pub updated_at: Option<Timestamp>,
+  pub rev: Option<Uint64>,
+  pub is_suspended: bool,
   pub details: Option<ContractMetadataViewDetails>,
 }
 

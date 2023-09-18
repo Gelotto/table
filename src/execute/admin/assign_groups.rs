@@ -1,22 +1,22 @@
-use cosmwasm_std::{Addr, DepsMut, Env, MessageInfo, Response};
+use cosmwasm_std::{DepsMut, Env, MessageInfo, Response};
 
 use crate::{
   error::ContractError,
   msg::GroupUpdates,
-  state::{append_group, ensure_is_authorized_owner, load_contract_id, remove_from_group, resolve_group_id},
+  state::{append_group, ensure_sender_is_owner, load_contract_id, remove_from_group, resolve_group_id},
 };
 
 pub fn on_execute(
   deps: DepsMut,
   _env: Env,
   info: MessageInfo,
-  contract_addr: Addr,
   updates: GroupUpdates,
 ) -> Result<Response, ContractError> {
-  let action = "group";
+  let action = "update_groups";
 
-  ensure_is_authorized_owner(deps.storage, deps.querier, &info.sender, action)?;
+  ensure_sender_is_owner(deps.storage, deps.querier, &info.sender, action)?;
 
+  let contract_addr = updates.contract;
   let contract_id = load_contract_id(deps.storage, &contract_addr)?;
 
   // Remove contract from the given groups.

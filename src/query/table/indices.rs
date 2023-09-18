@@ -18,13 +18,16 @@ pub fn query_indices(
 
   let desc = maybe_desc.unwrap_or(false);
   let order = if desc { Order::Descending } else { Order::Ascending };
-
-  let mut min = Some(Bound::Exclusive((maybe_cursor.unwrap_or_default(), PhantomData)));
-  let mut max: Option<Bound<String>> = None;
-
-  if desc {
-    (min, max) = (max, min)
-  }
+  let (min, max) = match order {
+    Order::Ascending => (
+      maybe_cursor.and_then(|start_name| Some(Bound::Exclusive((start_name, PhantomData)))),
+      None,
+    ),
+    Order::Descending => (
+      None,
+      maybe_cursor.and_then(|start_name| Some(Bound::Exclusive((start_name, PhantomData)))),
+    ),
+  };
 
   for result in INDEX_METADATA.range(deps.storage, min, max, order).take(PAGE_SIZE) {
     let (_, meta) = result?;

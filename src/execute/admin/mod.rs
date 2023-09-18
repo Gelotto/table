@@ -1,10 +1,9 @@
-pub mod create;
+pub mod assign_groups;
 pub mod create_group;
 pub mod create_index;
 pub mod create_partition;
 pub mod delete_index;
 pub mod revert_config;
-pub mod set_groups;
 pub mod set_partition;
 pub mod unsuspend;
 pub mod update_config;

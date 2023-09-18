@@ -3,7 +3,7 @@ use cosmwasm_std::{DepsMut, Env, MessageInfo, Response};
 use crate::{
   error::ContractError,
   msg::TableInfo,
-  state::{ensure_is_authorized_owner, TABLE_INFO},
+  state::{ensure_sender_is_owner, TABLE_INFO},
 };
 
 // Replace the existing config info object.
@@ -15,7 +15,7 @@ pub fn on_execute(
 ) -> Result<Response, ContractError> {
   let action = "update_info";
 
-  ensure_is_authorized_owner(deps.storage, deps.querier, &info.sender, action)?;
+  ensure_sender_is_owner(deps.storage, deps.querier, &info.sender, action)?;
 
   TABLE_INFO.save(deps.storage, &table_info)?;
 

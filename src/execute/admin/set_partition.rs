@@ -5,7 +5,7 @@ use crate::{
   error::ContractError,
   msg::{IndexType, PartitionSelector},
   state::{
-    decrement_tag_count, ensure_contract_not_suspended, ensure_is_authorized_owner, ensure_partition_exists,
+    decrement_tag_count, ensure_contract_not_suspended, ensure_partition_exists, ensure_sender_is_owner,
     increment_tag_count, load_contract_id, resolve_partition_id, ContractID, CustomIndexMap, PartitionID,
     CONTRACT_DYN_METADATA, CONTRACT_INDEX_TYPES, CONTRACT_METADATA, CONTRACT_TAGS, IX_CODE_ID, IX_CREATED_AT,
     IX_CREATED_BY, IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, VALUES_BOOL, VALUES_STRING,
@@ -26,14 +26,15 @@ pub fn on_execute(
 
   deps.api.addr_validate(contract_addr.as_str())?;
 
-  ensure_contract_not_suspended(deps.storage, &contract_addr)?;
-
   let dst_partition = resolve_partition_id(deps.storage, dst_selector)?;
 
   ensure_partition_exists(deps.storage, dst_partition)?;
-  ensure_is_authorized_owner(deps.storage, deps.querier, &info.sender, action)?;
+  ensure_sender_is_owner(deps.storage, deps.querier, &info.sender, action)?;
 
   let contract_id = load_contract_id(deps.storage, &contract_addr)?;
+
+  ensure_contract_not_suspended(deps.storage, contract_id)?;
+
   let meta = CONTRACT_METADATA.load(deps.storage, contract_id)?;
 
   if meta.partition != dst_partition {

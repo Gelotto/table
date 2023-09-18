@@ -1,7 +1,10 @@
 use crate::error::ContractError;
 use crate::execute;
 use crate::models::ReplyJob;
-use crate::msg::{AdminMsg, ClientMsg, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, ReadMsg};
+use crate::msg::{
+  AdminMsg, ClientMsg, ContractQueryMsg, ContractsQueryMsg, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg,
+  TableQueryMsg,
+};
 use crate::query;
 use crate::state::{self, load_reply_job};
 use cosmwasm_std::{entry_point, Reply};
@@ -31,24 +34,35 @@ pub fn execute(
   msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
   match msg {
+    // Client functions - executable by any smart contract "in" that exists in
+    // this "table" OR by accounts with owner auth:
     ExecuteMsg::Client(msg) => match msg {
+      ClientMsg::Create(params) => execute::client::create::on_execute(deps, env, info, params),
       ClientMsg::Update(params) => execute::client::update::on_execute(deps, env, info, params),
       ClientMsg::Delete(addr) => execute::client::delete::on_execute(deps, env, info, addr),
       ClientMsg::Flag(params) => execute::client::flag::on_execute(deps, env, info, params),
     },
+    // Admin functions - require "owner" auth:
     ExecuteMsg::Admin(msg) => match msg {
       AdminMsg::UpdateInfo(table_info) => execute::admin::update_info::on_execute(deps, env, info, table_info),
+      AdminMsg::Unsuspend(addr) => execute::admin::unsuspend::on_execute(deps, env, info, addr),
+
+      // Config operations
       AdminMsg::UpdateConfig(config) => execute::admin::update_config::on_execute(deps, env, info, config),
       AdminMsg::RevertConfig() => execute::admin::revert_config::on_execute(deps, env, info),
-      AdminMsg::Create(params) => execute::admin::create::on_execute(deps, env, info, params),
+
+      // Index operations
       AdminMsg::CreateIndex(params) => execute::admin::create_index::on_execute(deps, env, info, params),
-      AdminMsg::CreatePartition(params) => execute::admin::create_partition::on_execute(deps, env, info, params),
       AdminMsg::DeleteIndex(name) => execute::admin::delete_index::on_execute(deps, env, info, name),
-      AdminMsg::Unsuspend(addr) => execute::admin::unsuspend::on_execute(deps, env, info, addr),
-      AdminMsg::SetGroups(addr, updates) => execute::admin::set_groups::on_execute(deps, env, info, addr, updates),
+
+      // Partition operations
+      AdminMsg::CreatePartition(params) => execute::admin::create_partition::on_execute(deps, env, info, params),
       AdminMsg::SetPartition(addr, partition) => {
         execute::admin::set_partition::on_execute(deps, env, info, addr, partition)
       },
+      // Group operations
+      AdminMsg::CreateGroup(params) => execute::admin::create_group::on_execute(deps, env, info, params),
+      AdminMsg::AssignGroups(updates) => execute::admin::assign_groups::on_execute(deps, env, info, updates),
     },
   }
 }
@@ -61,7 +75,7 @@ pub fn reply(
 ) -> Result<Response, ContractError> {
   let job = load_reply_job(deps.storage, reply.id)?;
   return Ok(match job {
-    ReplyJob::Create { params, initiator } => execute::admin::create::on_reply(deps, env, reply, params, initiator),
+    ReplyJob::Create { params, initiator } => execute::client::create::on_reply(deps, env, reply, params, initiator),
   }?);
 }
 
@@ -72,13 +86,26 @@ pub fn query(
   msg: QueryMsg,
 ) -> Result<Binary, ContractError> {
   let result = match msg {
-    QueryMsg::Indices { cursor, desc } => to_binary(&query::indices(deps, cursor, desc)?),
-    QueryMsg::Groups { cursor, desc } => to_binary(&query::groups(deps, cursor, desc)?),
-    QueryMsg::Partitions { cursor, desc } => to_binary(&query::partitions(deps, cursor, desc)?),
-    QueryMsg::Read(msg) => match msg {
-      ReadMsg::Index(params) => to_binary(&query::read::index(deps, params)?),
-      ReadMsg::Tags(params) => to_binary(&query::read::tags(deps, params)?),
-      ReadMsg::Relationships(params) => to_binary(&query::read::relationships(deps, params)?),
+    // Paginate top-level data structures related to the table.
+    QueryMsg::Table(msg) => match msg {
+      TableQueryMsg::Indices { cursor, desc } => to_binary(&query::table::indices(deps, cursor, desc)?),
+      TableQueryMsg::Partitions { cursor, desc } => to_binary(&query::table::partitions(deps, cursor, desc)?),
+      TableQueryMsg::Tags(params) => to_binary(&query::table::tags(deps, params)?),
+      TableQueryMsg::Groups { cursor, desc } => to_binary(&query::table::groups(deps, cursor, desc)?),
+    },
+    // Paginate collections of contracts by various means.
+    QueryMsg::Contracts(msg) => match msg {
+      ContractsQueryMsg::Range(params) => to_binary(&query::contracts::range(deps, params)?),
+      ContractsQueryMsg::WithTag(params) => to_binary(&query::contracts::with_tag(deps, params)?),
+      ContractsQueryMsg::InGroup(params) => to_binary(&query::contracts::in_group(deps, params)?),
+      ContractsQueryMsg::ByAddresses(mut params) => to_binary(&query::contracts::by_addresses(deps, &mut params)?),
+      ContractsQueryMsg::RelatedTo(params) => to_binary(&query::contracts::related_to(deps, params)?),
+    },
+    // Paginate relationshps, groups, & tags associated with a given contract.
+    QueryMsg::Contract(msg) => match msg {
+      ContractQueryMsg::Relationships(params) => to_binary(&query::contract::relationships(deps, params)?),
+      ContractQueryMsg::Groups(params) => to_binary(&query::contract::groups(deps, params)?),
+      ContractQueryMsg::Tags(params) => to_binary(&query::contract::tags(deps, params)?),
     },
   }?;
   Ok(result)

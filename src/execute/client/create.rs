@@ -9,9 +9,10 @@ use crate::{
   models::{ContractMetadata, ReplyJob},
   msg::CreationParams,
   state::{
-    append_group, ensure_is_authorized_owner, load_next_contract_id, resolve_group_id, resolve_partition_id,
-    CONTRACT_METADATA, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY,
-    PARTITION_SIZES, REPLY_JOBS, REPLY_JOB_ID_COUNTER, X,
+    append_group, ensure_contract_not_suspended, ensure_sender_is_owner, exists_contract_address, load_contract_id,
+    load_next_contract_id, resolve_group_id, resolve_partition_id, CONTRACT_METADATA, IX_CODE_ID, IX_CONTRACT_ID,
+    IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, REPLY_JOBS,
+    REPLY_JOB_ID_COUNTER, X,
   },
 };
 
@@ -24,7 +25,15 @@ pub fn on_execute(
   let action = "create";
 
   ensure_authorized_code_id(deps.storage, params.code_id.into())?;
-  ensure_is_authorized_owner(deps.storage, deps.querier, &info.sender, action)?;
+
+  // If sender isn't the contract itself, only allow sender if auth'd by owner
+  // address or ACL.
+  if !exists_contract_address(deps.storage, &info.sender) {
+    ensure_sender_is_owner(deps.storage, deps.querier, &info.sender, action)?;
+  } else {
+    let sender_contract_id = load_contract_id(deps.storage, &info.sender)?;
+    ensure_contract_not_suspended(deps.storage, sender_contract_id)?;
+  }
 
   let initiator = &info.sender;
   let job_id = create_reply_job(deps.storage, &params, initiator)?;
