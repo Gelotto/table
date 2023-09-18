@@ -1,8 +1,9 @@
 use std::marker::PhantomData;
 
 use crate::error::ContractError;
-use crate::msg::{PartitionView, PartitionsResponse};
+use crate::msg::{PartitionView, PartitionsResponse, TablePartitionsQueryParams};
 use crate::state::{PartitionID, PARTITION_METADATA, PARTITION_SIZES};
+use crate::util::parse;
 use cosmwasm_std::{Deps, Order};
 use cw_storage_plus::Bound;
 
@@ -14,20 +15,26 @@ pub const PAGE_SIZE: usize = 50;
 /// Return metadata for the given partition
 pub fn query_partitions(
   deps: Deps,
-  maybe_cursor: Option<PartitionID>,
-  maybe_desc: Option<bool>,
+  params: TablePartitionsQueryParams,
 ) -> Result<PartitionsResponse, ContractError> {
   let mut partitions: Vec<PartitionView> = Vec::with_capacity(2);
 
-  let desc = maybe_desc.unwrap_or(false);
+  let desc = params.desc.unwrap_or(false);
   let order = if desc { Order::Descending } else { Order::Ascending };
-
-  let mut min = Some(Bound::Exclusive((maybe_cursor.unwrap_or_default(), PhantomData)));
-  let mut max: Option<Bound<PartitionID>> = None;
-
-  if desc {
-    (min, max) = (max, min)
-  }
+  let (min, max) = match order {
+    Order::Ascending => (
+      params
+        .cursor
+        .and_then(|start| Some(Bound::Exclusive((parse::<PartitionID>(start).ok()?, PhantomData)))),
+      None,
+    ),
+    Order::Descending => (
+      None,
+      params
+        .cursor
+        .and_then(|start| Some(Bound::Exclusive((parse::<PartitionID>(start).ok()?, PhantomData)))),
+    ),
+  };
 
   for result in PARTITION_METADATA.range(deps.storage, min, max, order).take(PAGE_SIZE) {
     let (partition_id, meta) = result?;
@@ -46,37 +53,6 @@ pub fn query_partitions(
   } else {
     None
   };
-
-  // // Get first page of tag counts
-  // let mut tags: Vec<TagCount> = Vec::with_capacity(TAG_COUNT_PAGE_SIZE);
-  // let cursor_in: Option<String> = None; // TODO: Implement in a "partition tags" query
-
-  // if !size.is_zero() {
-  //   let start_tag = cursor_in.unwrap_or_default();
-  //   let min: Option<Bound<_>> = if !start_tag.is_empty() {
-  //     Some(Bound::Exclusive((&start_tag, PhantomData)))
-  //   } else {
-  //     None
-  //   };
-  //   for result in PARTITION_TAG_COUNTS
-  //     .prefix(partition_id)
-  //     .range(deps.storage, min, None, Order::Ascending)
-  //     .take(TAG_COUNT_PAGE_SIZE)
-  //   {
-  //     let (tag, count) = result?;
-  //     tags.push(TagCount {
-  //       tag: tag.clone(),
-  //       count,
-  //     });
-  //   }
-  // }
-
-  // // Get Cursor for next page of tag counts
-  // let cursor: Option<String> = if let Some(last) = tags.last() {
-  //   Some(last.tag.clone())
-  // } else {
-  //   None
-  // };
 
   Ok(PartitionsResponse { partitions, cursor })
 }

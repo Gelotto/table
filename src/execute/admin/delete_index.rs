@@ -4,7 +4,7 @@ use cw_storage_plus::Map;
 use crate::{
   error::ContractError,
   msg::IndexType,
-  state::{ensure_sender_is_owner, ContractID, PartitionID, INDEX_METADATA},
+  state::{ensure_sender_allowed, ContractID, PartitionID, INDEX_METADATA},
   util::build_index_storage_key,
 };
 
@@ -16,7 +16,7 @@ pub fn on_execute(
 ) -> Result<Response, ContractError> {
   let action = "delete_index";
 
-  ensure_sender_is_owner(deps.storage, deps.querier, &info.sender, action)?;
+  ensure_sender_allowed(deps.storage, deps.querier, &info.sender, action)?;
 
   if let Some(meta) = INDEX_METADATA.may_load(deps.storage, index_name.clone())? {
     INDEX_METADATA.remove(deps.storage, index_name.clone());

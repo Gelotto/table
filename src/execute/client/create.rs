@@ -9,10 +9,9 @@ use crate::{
   models::{ContractMetadata, ReplyJob},
   msg::CreationParams,
   state::{
-    append_group, ensure_contract_not_suspended, ensure_sender_is_owner, exists_contract_address, load_contract_id,
-    load_next_contract_id, resolve_group_id, resolve_partition_id, CONTRACT_METADATA, IX_CODE_ID, IX_CONTRACT_ID,
-    IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, REPLY_JOBS,
-    REPLY_JOB_ID_COUNTER, X,
+    append_group, ensure_contract_not_suspended, ensure_sender_allowed, exists_contract_address, load_contract_id,
+    load_next_contract_id, resolve_partition_id, CONTRACT_METADATA, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT,
+    IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, REPLY_JOBS, REPLY_JOB_ID_COUNTER, X,
   },
 };
 
@@ -29,7 +28,7 @@ pub fn on_execute(
   // If sender isn't the contract itself, only allow sender if auth'd by owner
   // address or ACL.
   if !exists_contract_address(deps.storage, &info.sender) {
-    ensure_sender_is_owner(deps.storage, deps.querier, &info.sender, action)?;
+    ensure_sender_allowed(deps.storage, deps.querier, &info.sender, action)?;
   } else {
     let sender_contract_id = load_contract_id(deps.storage, &info.sender)?;
     ensure_contract_not_suspended(deps.storage, sender_contract_id)?;
@@ -112,10 +111,9 @@ pub fn on_reply(
           IX_CREATED_AT.save(deps.storage, (p, env.block.time.nanos(), contract_id), &X)?;
           IX_UPDATED_AT.save(deps.storage, (p, env.block.time.nanos(), contract_id), &X)?;
 
-          if let Some(groups) = params.groups {
-            for g in groups.iter() {
-              let group_id = resolve_group_id(deps.storage, g.to_owned())?;
-              append_group(deps.storage, group_id, contract_id)?;
+          if let Some(group_ids) = params.groups {
+            for group_id in group_ids.iter() {
+              append_group(deps.storage, *group_id, contract_id)?;
             }
           }
 

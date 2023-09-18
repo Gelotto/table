@@ -3,7 +3,7 @@ use cosmwasm_std::{DepsMut, Env, MessageInfo, Response, Storage, Uint64};
 use crate::{
   error::ContractError,
   msg::{GroupCreationParams, GroupMetadata},
-  state::{ensure_sender_is_owner, GroupID, GROUP_ID_COUNTER, GROUP_METADATA, GROUP_NAME_2_ID},
+  state::{ensure_sender_allowed, GroupID, GROUP_ID_COUNTER, GROUP_IX_CREATED_AT, GROUP_IX_NAME, GROUP_METADATA, X},
 };
 
 pub fn on_execute(
@@ -14,28 +14,25 @@ pub fn on_execute(
 ) -> Result<Response, ContractError> {
   let action = "create_group";
 
-  ensure_sender_is_owner(deps.storage, deps.querier, &info.sender, action)?;
+  ensure_sender_allowed(deps.storage, deps.querier, &info.sender, action)?;
 
   let group_id = increment_next_group_id(deps.storage)?;
   let name = params.name.unwrap_or_else(|| group_id.to_string());
 
-  // Save id into name -> ID lookup table.
-  GROUP_NAME_2_ID.save(deps.storage, name.clone(), &group_id)?;
+  GROUP_METADATA.save(
+    deps.storage,
+    group_id,
+    &GroupMetadata {
+      name: name.clone(),
+      description: params.description,
+      created_by: info.sender.clone(),
+      created_at: env.block.time,
+      size: Uint64::zero(),
+    },
+  )?;
 
-  GROUP_METADATA.update(deps.storage, group_id, |maybe_meta| -> Result<_, ContractError> {
-    if maybe_meta.is_some() {
-      Err(ContractError::NotAuthorized {
-        reason: format!("index {} already exists", name),
-      })
-    } else {
-      Ok(GroupMetadata {
-        description: params.description,
-        created_at: env.block.time,
-        size: Uint64::zero(),
-        name,
-      })
-    }
-  })?;
+  GROUP_IX_NAME.save(deps.storage, (name.clone(), group_id), &X)?;
+  GROUP_IX_CREATED_AT.save(deps.storage, (env.block.time.nanos(), group_id), &X)?;
 
   Ok(Response::new().add_attribute("action", action))
 }

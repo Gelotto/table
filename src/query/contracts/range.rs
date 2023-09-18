@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-use crate::msg::{ContractsRangeResponse, Cursor, IndexName, IndexQueryParams};
+use crate::msg::{ContractsRangeResponse, Cursor, IndexQueryParams, RangeSelector};
 use crate::state::{
   load_contract_records, ContractID, CustomIndexMap, PartitionID, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT,
   IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY,
@@ -205,92 +205,92 @@ fn get_contract_ids(
   let desc = query.desc.unwrap_or(false);
   let order = if desc { Order::Descending } else { Order::Ascending };
 
-  Ok(match &query.index {
-    IndexName::Id => {
+  Ok(match &query.select {
+    RangeSelector::Id => {
       let index = IX_CONTRACT_ID;
       let (start, stop) = build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
-    IndexName::CodeId => {
+    RangeSelector::CodeId => {
       let index = IX_CODE_ID;
       let (start, stop) = build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
-    IndexName::Rev => {
+    RangeSelector::Rev => {
       let index = IX_REV;
       let (start, stop) = build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
-    IndexName::CreatedAt => {
+    RangeSelector::CreatedAt => {
       let index = IX_CREATED_AT;
       let (start, stop) = build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
-    IndexName::UpdatedAt => {
+    RangeSelector::UpdatedAt => {
       let index = IX_UPDATED_AT;
       let (start, stop) = build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
-    IndexName::CreatedBy => {
+    RangeSelector::CreatedBy => {
       let index = IX_CREATED_BY;
       let (start, stop) = build_start_stop_values_str(raw_start, raw_stop, exact)?;
       let (min, max) = build_range_bounds_str(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
-    IndexName::UpdatedBy => {
+    RangeSelector::UpdatedBy => {
       let index = IX_UPDATED_BY;
       let (start, stop) = build_start_stop_values_str(raw_start, raw_stop, exact)?;
       let (min, max) = build_range_bounds_str(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
-    IndexName::String(index_name) => {
+    RangeSelector::String(index_name) => {
       let index: CustomIndexMap<String> = Map::new(index_name.as_str());
       let (start, stop) = build_start_stop_values_str(raw_start, raw_stop, exact)?;
       let (min, max) = build_range_bounds_str(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
-    IndexName::Bool(index_name) => {
+    RangeSelector::Bool(index_name) => {
       let index: CustomIndexMap<u8> = Map::new(index_name.as_str());
       let (start, stop) = build_start_stop_values(raw_start, u8::MIN, raw_stop, u8::MAX, exact, &parse_bool)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
-    IndexName::Timestamp(index_name) => {
+    RangeSelector::Timestamp(index_name) => {
       let index: CustomIndexMap<u64> = Map::new(index_name.as_str());
       let (start, stop) = build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
-    IndexName::Uint8(index_name) => {
+    RangeSelector::Uint8(index_name) => {
       let index: CustomIndexMap<u8> = Map::new(index_name.as_str());
       let (start, stop) = build_start_stop_values(raw_start, u8::MIN, raw_stop, u8::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
-    IndexName::Uint16(index_name) => {
+    RangeSelector::Uint16(index_name) => {
       let index: CustomIndexMap<u16> = Map::new(index_name.as_str());
       let (start, stop) = build_start_stop_values(raw_start, u16::MIN, raw_stop, u16::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
-    IndexName::Uint32(index_name) => {
+    RangeSelector::Uint32(index_name) => {
       let index: CustomIndexMap<u32> = Map::new(index_name.as_str());
       let (start, stop) = build_start_stop_values(raw_start, u32::MIN, raw_stop, u32::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
-    IndexName::Uint64(index_name) => {
+    RangeSelector::Uint64(index_name) => {
       let index: CustomIndexMap<u64> = Map::new(index_name.as_str());
       let (start, stop) = build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
       next_page(index.keys(storage, min, max, order), limit)?
     },
-    IndexName::Uint128(index_name) => {
+    RangeSelector::Uint128(index_name) => {
       let index: CustomIndexMap<u128> = Map::new(index_name.as_str());
       let (start, stop) = build_start_stop_values(raw_start, u128::MIN, raw_stop, u128::MAX, exact, &parse)?;
       let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;

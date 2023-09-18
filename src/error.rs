@@ -37,6 +37,9 @@ pub enum ContractError {
 
   #[error("ContractSuspended: contract {contract_id:?} has been flagged and suspended")]
   ContractSuspended { contract_id: ContractID },
+
+  #[error("InvalidCursor: {reason:?}")]
+  InvalidCursor { reason: String },
 }
 
 impl From<ContractError> for StdError {

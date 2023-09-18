@@ -2,7 +2,7 @@ use cosmwasm_std::{Addr, DepsMut, Env, MessageInfo, Response};
 
 use crate::{
   error::ContractError,
-  state::{ensure_sender_is_owner, CONTRACT_ADDR_2_ID, CONTRACT_SUSPENSIONS},
+  state::{ensure_sender_allowed, CONTRACT_ADDR_2_ID, CONTRACT_SUSPENSIONS},
 };
 
 /// Load and restore the previous config, provided there is one.
@@ -15,7 +15,7 @@ pub fn on_execute(
   let action = "unsuspend";
 
   // Only owner authority can un-suspend a contract
-  ensure_sender_is_owner(deps.storage, deps.querier, &info.sender, action)?;
+  ensure_sender_allowed(deps.storage, deps.querier, &info.sender, action)?;
   if let Some(id) = CONTRACT_ADDR_2_ID.may_load(deps.storage, &contract_addr)? {
     CONTRACT_SUSPENSIONS.remove(deps.storage, id.into());
   }

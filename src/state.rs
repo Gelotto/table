@@ -1,7 +1,7 @@
 use crate::models::{ContractMetadataView, ContractMetadataViewDetails, Details, DynamicContractMetadata, ReplyJob};
 use crate::msg::{
-  Config, ContractRecord, GroupMetadata, GroupSelector, IndexMetadata, IndexType, InstantiateMsg,
-  PartitionCreationParams, PartitionMetadata, PartitionSelector, TableInfo,
+  Config, ContractRecord, GroupMetadata, IndexMetadata, IndexType, InstantiateMsg, PartitionCreationParams,
+  PartitionMetadata, PartitionSelector, TableInfo,
 };
 use crate::{error::ContractError, models::ContractMetadata};
 use cosmwasm_std::{
@@ -48,6 +48,8 @@ pub const CONTRACT_DYN_METADATA: Map<ContractID, DynamicContractMetadata> = Map:
 // Flags indicating that a given contract is suspended
 pub const CONTRACT_SUSPENSIONS: Map<ContractID, bool> = Map::new("contract_suspensions");
 
+pub const CONTRACT_GROUP_IDS: IndexMap<(ContractID, GroupID)> = Map::new("contract_groups");
+
 // Lookup table for finding all tags associated with a contract ID
 pub const CONTRACT_TAGS: IndexMap<(ContractID, String)> = Map::new("contract_tags");
 
@@ -72,16 +74,8 @@ pub const PARTITION_SIZES: Map<PartitionID, Uint64> = Map::new("partition_sizes"
 // number of contracts with which each tag is associated.
 pub const PARTITION_TAG_COUNTS: Map<(PartitionID, &String), u32> = Map::new("partition_tag_counts");
 
-// Partition metadata
-pub const GROUP_METADATA: Map<GroupID, GroupMetadata> = Map::new("group_metadata");
-
-// Group ID counter and name mapper.
-pub const GROUP_ID_COUNTER: Item<GroupID> = Item::new("group_id_counter");
-pub const GROUP_NAME_2_ID: Map<String, GroupID> = Map::new("group_name_2_id");
-
 // Lookup table for finding names/keys of indexed values for a given contract ID
 pub const CONTRACT_INDEX_TYPES: Map<(ContractID, &String), IndexType> = Map::new("contract_index_types");
-pub const CONTRACT_GROUP_IDS: IndexMap<(ContractID, GroupID)> = Map::new("contract_groups");
 
 // Metadata for custom indices.
 pub const INDEX_METADATA: Map<String, IndexMetadata> = Map::new("index_metadata");
@@ -117,6 +111,12 @@ pub const VALUES_U128: Map<(ContractID, &String), Uint128> = Map::new("values_u1
 /// ID and an arbitrary Addr, like (contract_id, "winner", user_addr)
 pub const REL_ADDR_2_CONTRACT_ID: Map<(String, String, String), u8> = Map::new("rel_addr_2_contract_id");
 pub const REL_CONTRACT_ID_2_ADDR: Map<(ContractID, String, String), u8> = Map::new("rel_contract_id_2_addr");
+
+// Group state:
+pub const GROUP_METADATA: Map<GroupID, GroupMetadata> = Map::new("group_metadata");
+pub const GROUP_ID_COUNTER: Item<GroupID> = Item::new("group_id_counter");
+pub const GROUP_IX_NAME: IndexMap<(String, GroupID)> = Map::new("group_ix_name");
+pub const GROUP_IX_CREATED_AT: IndexMap<(u64, GroupID)> = Map::new("group_ix_created_at");
 
 pub fn initialize(
   deps: DepsMut,
@@ -184,7 +184,7 @@ pub fn build_contract_metadata_view(
   })
 }
 
-pub fn ensure_sender_is_owner(
+pub fn ensure_sender_allowed(
   storage: &dyn Storage,
   querier: QuerierWrapper<Empty>,
   principal: &Addr,
@@ -429,22 +429,6 @@ pub fn resolve_partition_id(
         .load(storage, name.clone())
         .map_err(|_| ContractError::PartitionNotFound {
           reason: format!("Partition '{}' does not exist", name),
-        })?
-    },
-  })
-}
-
-pub fn resolve_group_id(
-  storage: &dyn Storage,
-  selector: GroupSelector,
-) -> Result<GroupID, ContractError> {
-  Ok(match selector {
-    GroupSelector::Id(id) => id,
-    GroupSelector::Name(name) => {
-      GROUP_NAME_2_ID
-        .load(storage, name.clone())
-        .map_err(|_| ContractError::GroupNotFound {
-          reason: format!("Group '{}' does not exist", name),
         })?
     },
   })

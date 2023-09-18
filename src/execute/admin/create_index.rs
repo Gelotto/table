@@ -3,7 +3,7 @@ use cosmwasm_std::{DepsMut, Env, MessageInfo, Response, Uint64};
 use crate::{
   error::ContractError,
   msg::{IndexCreationParams, IndexMetadata},
-  state::{ensure_sender_is_owner, INDEX_METADATA},
+  state::{ensure_sender_allowed, INDEX_METADATA},
 };
 
 pub fn on_execute(
@@ -14,7 +14,7 @@ pub fn on_execute(
 ) -> Result<Response, ContractError> {
   let action = "create_index";
 
-  ensure_sender_is_owner(deps.storage, deps.querier, &info.sender, action)?;
+  ensure_sender_allowed(deps.storage, deps.querier, &info.sender, action)?;
 
   INDEX_METADATA.update(
     deps.storage,

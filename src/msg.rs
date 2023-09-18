@@ -44,8 +44,8 @@ pub enum ClientMsg {
 #[cw_serde]
 pub struct GroupUpdates {
   pub contract: Addr,
-  pub remove: Option<Vec<GroupSelector>>,
-  pub add: Option<Vec<GroupSelector>>,
+  pub remove: Option<Vec<GroupID>>,
+  pub add: Option<Vec<GroupID>>,
 }
 
 #[cw_serde]
@@ -73,18 +73,9 @@ pub enum ContractsQueryMsg {
 
 #[cw_serde]
 pub enum TableQueryMsg {
-  Indices {
-    cursor: Option<String>,
-    desc: Option<bool>,
-  },
-  Partitions {
-    cursor: Option<PartitionID>,
-    desc: Option<bool>,
-  },
-  Groups {
-    cursor: Option<GroupID>,
-    desc: Option<bool>,
-  },
+  Indices(TableIndicesQueryParams),
+  Partitions(TablePartitionsQueryParams),
+  Groups(TableGroupsQueryParams),
   Tags(TableTagsQueryParams),
 }
 
@@ -225,7 +216,7 @@ pub struct CreationParams {
   // Internal contract params
   pub partition: PartitionSelector,
   pub label: Option<String>,
-  pub groups: Option<Vec<GroupSelector>>,
+  pub groups: Option<Vec<GroupID>>,
   pub tags: Option<Vec<String>>,
 }
 
@@ -275,7 +266,7 @@ pub enum IndexValueRange {
 }
 
 #[cw_serde]
-pub enum IndexName {
+pub enum RangeSelector {
   CreatedAt,
   UpdatedAt,
   CreatedBy,
@@ -351,14 +342,9 @@ pub struct Config {
 }
 
 #[cw_serde]
-pub enum GroupSelector {
-  Id(GroupID),
-  Name(String),
-}
-
-#[cw_serde]
 pub struct GroupMetadata {
   pub name: String,
+  pub created_by: Addr,
   pub created_at: Timestamp,
   pub description: Option<String>,
   pub size: Uint64,
@@ -366,7 +352,7 @@ pub struct GroupMetadata {
 
 #[cw_serde]
 pub struct GroupMetadataView {
-  pub id: u32,
+  pub id: GroupID,
   pub name: String,
   pub created_at: Timestamp,
   pub description: Option<String>,
@@ -425,7 +411,7 @@ pub struct ContractRelationshipsQueryParams {
 
 #[cw_serde]
 pub struct GroupQueryParams {
-  pub group: GroupSelector,
+  pub group: GroupID,
   pub cursor: Option<Uint64>,
   pub desc: Option<bool>,
   pub limit: Option<u32>,
@@ -459,6 +445,33 @@ pub struct TableTagsQueryParams {
   pub desc: Option<bool>,
   pub limit: Option<u32>,
   pub partition: PartitionID,
+}
+
+#[cw_serde]
+pub enum GroupSelector {
+  WithName(String),
+  CreatedBetween(Timestamp, Timestamp),
+}
+
+#[cw_serde]
+pub struct TableGroupsQueryParams {
+  pub select: Option<GroupSelector>,
+  pub cursor: Option<Vec<String>>,
+  pub desc: Option<bool>,
+  pub limit: Option<u32>,
+  pub partition: PartitionID,
+}
+
+#[cw_serde]
+pub struct TablePartitionsQueryParams {
+  pub cursor: Option<String>,
+  pub desc: Option<bool>,
+}
+
+#[cw_serde]
+pub struct TableIndicesQueryParams {
+  pub cursor: Option<String>,
+  pub desc: Option<bool>,
 }
 
 #[cw_serde]
@@ -497,7 +510,7 @@ pub enum IndexQueryParams {
 
 #[cw_serde]
 pub struct RangeQueryParams {
-  pub index: IndexName,
+  pub select: RangeSelector,
   pub partition: PartitionID,
   pub params: IndexQueryParams,
   pub desc: Option<bool>,

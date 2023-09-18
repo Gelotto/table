@@ -88,10 +88,10 @@ pub fn query(
   let result = match msg {
     // Paginate top-level data structures related to the table.
     QueryMsg::Table(msg) => match msg {
-      TableQueryMsg::Indices { cursor, desc } => to_binary(&query::table::indices(deps, cursor, desc)?),
-      TableQueryMsg::Partitions { cursor, desc } => to_binary(&query::table::partitions(deps, cursor, desc)?),
+      TableQueryMsg::Indices(params) => to_binary(&query::table::indices(deps, params)?),
+      TableQueryMsg::Partitions(params) => to_binary(&query::table::partitions(deps, params)?),
       TableQueryMsg::Tags(params) => to_binary(&query::table::tags(deps, params)?),
-      TableQueryMsg::Groups { cursor, desc } => to_binary(&query::table::groups(deps, cursor, desc)?),
+      TableQueryMsg::Groups(params) => to_binary(&query::table::groups(deps, params)?),
     },
     // Paginate collections of contracts by various means.
     QueryMsg::Contracts(msg) => match msg {

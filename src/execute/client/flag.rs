@@ -5,7 +5,7 @@ use crate::{
   error::ContractError,
   models::ContractFlag,
   msg::FlagParams,
-  state::{ensure_sender_is_owner, load_contract_id, CONTRACT_SUSPENSIONS},
+  state::{ensure_contract_not_suspended, ensure_sender_allowed, load_contract_id, CONTRACT_SUSPENSIONS},
 };
 
 pub fn on_execute(
@@ -17,14 +17,16 @@ pub fn on_execute(
   let action = "flag";
 
   let contract_addr = deps.api.addr_validate(params.contract.as_str())?;
+  let contract_id = load_contract_id(deps.storage, &contract_addr)?;
 
   // If sender isn't the contract itself, only allow sender if auth'd by owner
   // address or ACL.
   if contract_addr != info.sender {
-    ensure_sender_is_owner(deps.storage, deps.querier, &info.sender, action)?;
+    ensure_sender_allowed(deps.storage, deps.querier, &info.sender, action)?;
+  } else {
+    ensure_contract_not_suspended(deps.storage, contract_id)?;
   };
 
-  let contract_id = load_contract_id(deps.storage, &contract_addr)?;
   let flags_deque_key = format!("_flags_{}", contract_id);
   let flags: Deque<ContractFlag> = Deque::new(flags_deque_key.as_str());
 

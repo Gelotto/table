@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use crate::error::ContractError;
 use crate::msg::{ContractRecord, ContractsByGroupResponse, GroupQueryParams};
-use crate::state::{load_contract_records, resolve_group_id, ContractID, IX_GROUP};
+use crate::state::{load_contract_records, ContractID, IX_GROUP};
 use cosmwasm_std::{Deps, Order, Uint64};
 use cw_storage_plus::Bound;
 
@@ -11,7 +11,7 @@ pub fn in_group(
   deps: Deps,
   params: GroupQueryParams,
 ) -> Result<ContractsByGroupResponse, ContractError> {
-  let group_id = resolve_group_id(deps.storage, params.group)?;
+  let group_id = params.group;
   let limit = params.limit.unwrap_or(20).clamp(1, 100) as usize;
   let desc = params.desc.unwrap_or(false);
   let order = if desc { Order::Descending } else { Order::Ascending };
