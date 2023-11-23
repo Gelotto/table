@@ -1,12 +1,13 @@
-use crate::models::{ContractMetadataView, ContractMetadataViewDetails, Details, DynamicContractMetadata, ReplyJob};
+use crate::execute::Context;
+use crate::models::{
+    ContractMetadataView, ContractMetadataViewDetails, Details, DynamicContractMetadata, ReplyJob,
+};
 use crate::msg::{
-  Config, ContractRecord, GroupMetadata, IndexMetadata, IndexType, InstantiateMsg, PartitionCreationParams,
-  PartitionMetadata, PartitionSelector, TableInfo,
+    Config, ContractRecord, GroupMetadata, IndexMetadata, IndexType, InstantiateMsg,
+    PartitionCreationParams, PartitionMetadata, PartitionSelector, TableInfo,
 };
 use crate::{error::ContractError, models::ContractMetadata};
-use cosmwasm_std::{
-  to_binary, Addr, Binary, DepsMut, Empty, Env, MessageInfo, Order, QuerierWrapper, Storage, Timestamp, Uint128, Uint64,
-};
+use cosmwasm_std::{to_binary, Addr, Binary, DepsMut, Order, Storage, Timestamp, Uint128, Uint64};
 use cw_acl::client::Acl;
 use cw_lib::models::Owner;
 use cw_storage_plus::{Item, Map};
@@ -43,7 +44,8 @@ pub const CONTRACT_ADDR_2_ID: Map<&Addr, Uint64> = Map::new("contract_addr_2_id"
 pub const CONTRACT_METADATA: Map<ContractID, ContractMetadata> = Map::new("contract_meta");
 
 // Contract metadata that changes on each update to any of its indices.
-pub const CONTRACT_DYN_METADATA: Map<ContractID, DynamicContractMetadata> = Map::new("contract_dyn_meta");
+pub const CONTRACT_DYN_METADATA: Map<ContractID, DynamicContractMetadata> =
+    Map::new("contract_dyn_meta");
 
 // Flags indicating that a given contract is suspended
 pub const CONTRACT_SUSPENSIONS: Map<ContractID, bool> = Map::new("contract_suspensions");
@@ -75,7 +77,8 @@ pub const PARTITION_SIZES: Map<PartitionID, Uint64> = Map::new("partition_sizes"
 pub const PARTITION_TAG_COUNTS: Map<(PartitionID, &String), u32> = Map::new("partition_tag_counts");
 
 // Lookup table for finding names/keys of indexed values for a given contract ID
-pub const CONTRACT_INDEX_TYPES: Map<(ContractID, &String), IndexType> = Map::new("contract_index_types");
+pub const CONTRACT_INDEX_TYPES: Map<(ContractID, &String), IndexType> =
+    Map::new("contract_index_types");
 
 // Metadata for custom indices.
 pub const INDEX_METADATA: Map<String, IndexMetadata> = Map::new("index_metadata");
@@ -106,11 +109,14 @@ pub const VALUES_U16: Map<(ContractID, &String), u16> = Map::new("values_u16");
 pub const VALUES_U32: Map<(ContractID, &String), u32> = Map::new("values_u32");
 pub const VALUES_U64: Map<(ContractID, &String), Uint64> = Map::new("values_u64");
 pub const VALUES_U128: Map<(ContractID, &String), Uint128> = Map::new("values_u128");
+pub const VALUES_BINARY: Map<(ContractID, &String), Binary> = Map::new("values_binary");
 
 /// Relationships define an arbitrary M-N named relationship between a contract
 /// ID and an arbitrary Addr, like (contract_id, "winner", user_addr)
-pub const REL_ADDR_2_CONTRACT_ID: Map<(String, String, String), u8> = Map::new("rel_addr_2_contract_id");
-pub const REL_CONTRACT_ID_2_ADDR: Map<(ContractID, String, String), u8> = Map::new("rel_contract_id_2_addr");
+pub const REL_ADDR_2_CONTRACT_ID: Map<(String, String, String), u8> =
+    Map::new("rel_addr_2_contract_id");
+pub const REL_CONTRACT_ID_2_ADDR: Map<(ContractID, String, String), u8> =
+    Map::new("rel_contract_id_2_addr");
 
 // Group state:
 pub const GROUP_METADATA: Map<GroupID, GroupMetadata> = Map::new("group_metadata");
@@ -119,438 +125,487 @@ pub const GROUP_IX_NAME: IndexMap<(String, GroupID)> = Map::new("group_ix_name")
 pub const GROUP_IX_CREATED_AT: IndexMap<(u64, GroupID)> = Map::new("group_ix_created_at");
 
 pub fn initialize(
-  deps: DepsMut,
-  env: Env,
-  _info: MessageInfo,
-  msg: InstantiateMsg,
+    ctx: Context,
+    msg: InstantiateMsg,
 ) -> Result<(), ContractError> {
-  deps.api.addr_validate(msg.config.owner.to_addr().as_str())?;
-  CONFIG_OWNER.save(deps.storage, &msg.config.owner)?;
-  CONFIG_CODE_ID_ALLOWLIST_ENABLED.save(deps.storage, &msg.config.code_id_allowlist_enabled)?;
-  CONTRACT_ID_COUNTER.save(deps.storage, &Uint64::zero())?;
-  REPLY_JOB_ID_COUNTER.save(deps.storage, &Uint64::zero())?;
-  GROUP_ID_COUNTER.save(deps.storage, &0)?;
-  PARTITION_ID_COUNTER.save(deps.storage, &0)?;
-  TABLE_INFO.save(deps.storage, &msg.info)?;
+    let Context { deps, env, .. } = ctx;
+    deps.api
+        .addr_validate(msg.config.owner.to_addr().as_str())?;
+    CONFIG_OWNER.save(deps.storage, &msg.config.owner)?;
+    CONFIG_CODE_ID_ALLOWLIST_ENABLED.save(deps.storage, &msg.config.code_id_allowlist_enabled)?;
+    CONTRACT_ID_COUNTER.save(deps.storage, &Uint64::zero())?;
+    REPLY_JOB_ID_COUNTER.save(deps.storage, &Uint64::zero())?;
+    GROUP_ID_COUNTER.save(deps.storage, &0)?;
+    PARTITION_ID_COUNTER.save(deps.storage, &0)?;
+    TABLE_INFO.save(deps.storage, &msg.info)?;
 
-  for params in msg.partitions.unwrap_or_else(|| {
-    vec![PartitionCreationParams {
-      name: Some("Unnamed Partition 1".to_owned()),
-      description: None,
-    }]
-  }) {
-    create_partition(deps.storage, env.block.time, &params)?;
-  }
+    for params in msg.partitions.unwrap_or_else(|| {
+        vec![PartitionCreationParams {
+            name: Some("Unnamed Partition 1".to_owned()),
+            description: None,
+        }]
+    }) {
+        create_partition(deps.storage, env.block.time, &params)?;
+    }
 
-  Ok(())
+    Ok(())
 }
 
 pub fn build_contract_metadata_view(
-  storage: &dyn Storage,
-  id: ContractID,
-  with_details: bool,
+    storage: &dyn Storage,
+    id: ContractID,
+    with_details: bool,
 ) -> Result<ContractMetadataView, ContractError> {
-  let meta = CONTRACT_METADATA.load(storage, id)?;
-  let (updated_at, rev, updated_at_height, updated_by) = match CONTRACT_DYN_METADATA.may_load(storage, id)? {
-    Some(meta) => (
-      Some(meta.updated_at),
-      Some(meta.rev),
-      Some(meta.updated_at_height),
-      Some(meta.updated_by),
-    ),
-    None => (None, None, None, None),
-  };
+    let meta = CONTRACT_METADATA.load(storage, id)?;
+    let (updated_at, rev, updated_at_height, updated_by) =
+        match CONTRACT_DYN_METADATA.may_load(storage, id)? {
+            Some(meta) => (
+                Some(meta.updated_at),
+                Some(meta.rev),
+                Some(meta.updated_at_height),
+                Some(meta.updated_by),
+            ),
+            None => (None, None, None, None),
+        };
 
-  Ok(ContractMetadataView {
-    is_suspended: is_suspended(storage, id)?,
-    partition: meta.partition,
-    created_at: meta.created_at,
-    updated_at,
-    rev,
-    details: if with_details {
-      Some(ContractMetadataViewDetails {
-        groups: load_contract_group_ids(storage, id)?,
-        code_id: meta.code_id,
-        created_at_height: meta.created_at_height,
-        created_by: meta.created_by,
-        is_managed: meta.is_managed,
-        updated_at_height,
-        updated_by,
-        id: id.into(),
-      })
-    } else {
-      None
-    },
-  })
+    Ok(ContractMetadataView {
+        is_suspended: is_suspended(storage, id)?,
+        partition: meta.partition,
+        created_at: meta.created_at,
+        updated_at,
+        rev,
+        details: if with_details {
+            Some(ContractMetadataViewDetails {
+                groups: load_contract_group_ids(storage, id)?,
+                code_id: meta.code_id,
+                created_at_height: meta.created_at_height,
+                created_by: meta.created_by,
+                is_managed: meta.is_managed,
+                updated_at_height,
+                updated_by,
+                id: id.into(),
+            })
+        } else {
+            None
+        },
+    })
 }
 
 pub fn ensure_sender_allowed(
-  storage: &dyn Storage,
-  querier: QuerierWrapper<Empty>,
-  principal: &Addr,
-  action: &str,
+    deps: &DepsMut,
+    principal: &Addr,
+    action: &str,
 ) -> Result<(), ContractError> {
-  if !match CONFIG_OWNER.load(storage)? {
-    Owner::Address(addr) => *principal == addr,
-    Owner::Acl(acl_addr) => {
-      let acl = Acl::new(&acl_addr);
-      acl.is_allowed(&querier, principal, action)?
-    },
-  } {
-    Err(ContractError::NotAuthorized {
-      reason: "Owner authorization required".to_owned(),
-    })
-  } else {
-    Ok(())
-  }
+    if !match CONFIG_OWNER.load(deps.storage)? {
+        Owner::Address(addr) => *principal == addr,
+        Owner::Acl(acl_addr) => {
+            let acl = Acl::new(&acl_addr);
+            acl.is_allowed(&deps.querier, principal, action)?
+        },
+    } {
+        Err(ContractError::NotAuthorized {
+            reason: "Owner authorization required".to_owned(),
+        })
+    } else {
+        Ok(())
+    }
 }
 
 pub fn ensure_partition_exists(
-  storage: &dyn Storage,
-  partition_id: PartitionID,
+    storage: &dyn Storage,
+    partition_id: PartitionID,
 ) -> Result<(), ContractError> {
-  if !PARTITION_METADATA.has(storage, partition_id) {
-    return Err(ContractError::PartitionNotFound {
-      reason: format!("Partition ID {} does not exist", partition_id),
-    });
-  }
-  Ok(())
+    if !PARTITION_METADATA.has(storage, partition_id) {
+        return Err(ContractError::PartitionNotFound {
+            reason: format!("Partition ID {} does not exist", partition_id),
+        });
+    }
+    Ok(())
 }
 
 pub fn is_suspended(
-  storage: &dyn Storage,
-  contract_id: ContractID,
+    storage: &dyn Storage,
+    contract_id: ContractID,
 ) -> Result<bool, ContractError> {
-  if let Some(is_suspended) = CONTRACT_SUSPENSIONS.may_load(storage, contract_id)? {
-    return Ok(is_suspended);
-  }
-  Ok(false)
+    if let Some(is_suspended) = CONTRACT_SUSPENSIONS.may_load(storage, contract_id)? {
+        return Ok(is_suspended);
+    }
+    Ok(false)
 }
 
 pub fn ensure_contract_not_suspended(
-  storage: &dyn Storage,
-  contract_id: ContractID,
+    storage: &dyn Storage,
+    contract_id: ContractID,
 ) -> Result<(), ContractError> {
-  if let Some(is_suspended) = CONTRACT_SUSPENSIONS.may_load(storage, contract_id)? {
-    if is_suspended {
-      return Err(ContractError::ContractSuspended { contract_id });
+    if let Some(is_suspended) = CONTRACT_SUSPENSIONS.may_load(storage, contract_id)? {
+        if is_suspended {
+            return Err(ContractError::ContractSuspended { contract_id });
+        }
     }
-  }
-  Ok(())
+    Ok(())
 }
 
 pub fn save_config(
-  storage: &mut dyn Storage,
-  config: &Config,
+    storage: &mut dyn Storage,
+    config: &Config,
 ) -> Result<(), ContractError> {
-  // Load and save existing config as backup. This can be restored by the
-  // updated owner by executing the Restore msg.
-  let prev_config = load_config(storage)?;
+    // Load and save existing config as backup. This can be restored by the
+    // updated owner by executing the Restore msg.
+    let prev_config = load_config(storage)?;
 
-  CONFIG_BACKUP.save(storage, &to_binary(&prev_config)?)?;
+    CONFIG_BACKUP.save(storage, &to_binary(&prev_config)?)?;
 
-  // Overwrite existing config settings with new ones
-  CONFIG_OWNER.save(storage, &config.owner)?;
-  CONFIG_CODE_ID_ALLOWLIST_ENABLED.save(storage, &config.code_id_allowlist_enabled)?;
-  Ok(())
+    // Overwrite existing config settings with new ones
+    CONFIG_OWNER.save(storage, &config.owner)?;
+    CONFIG_CODE_ID_ALLOWLIST_ENABLED.save(storage, &config.code_id_allowlist_enabled)?;
+    Ok(())
 }
 
 pub fn load_config(storage: &dyn Storage) -> Result<Config, ContractError> {
-  Ok(Config {
-    owner: CONFIG_OWNER.load(storage)?,
-    code_id_allowlist_enabled: CONFIG_CODE_ID_ALLOWLIST_ENABLED.load(storage)?,
-  })
+    Ok(Config {
+        owner: CONFIG_OWNER.load(storage)?,
+        code_id_allowlist_enabled: CONFIG_CODE_ID_ALLOWLIST_ENABLED.load(storage)?,
+    })
 }
 
 pub fn load_reply_job(
-  storage: &dyn Storage,
-  job_id: u64,
+    storage: &dyn Storage,
+    job_id: u64,
 ) -> Result<ReplyJob, ContractError> {
-  if let Some(job) = REPLY_JOBS.may_load(storage, job_id)? {
-    Ok(job)
-  } else {
-    Err(ContractError::JobNotFound {
-      reason: format!("Create msg job {} not found", job_id),
-    })
-  }
+    if let Some(job) = REPLY_JOBS.may_load(storage, job_id)? {
+        Ok(job)
+    } else {
+        Err(ContractError::JobNotFound {
+            reason: format!("Create msg job {} not found", job_id),
+        })
+    }
 }
 
 pub fn load_contract_addr(
-  storage: &dyn Storage,
-  contract_id: ContractID,
+    storage: &dyn Storage,
+    contract_id: ContractID,
 ) -> Result<Addr, ContractError> {
-  if let Some(addr) = CONTRACT_ID_2_ADDR.may_load(storage, contract_id)? {
-    Ok(addr)
-  } else {
-    Err(ContractError::NotAuthorized {
-      reason: format!("Unrecognized contract ID: {}", contract_id),
-    })
-  }
+    if let Some(addr) = CONTRACT_ID_2_ADDR.may_load(storage, contract_id)? {
+        Ok(addr)
+    } else {
+        Err(ContractError::NotAuthorized {
+            reason: format!("Unrecognized contract ID: {}", contract_id),
+        })
+    }
 }
 
 pub fn load_contract_id(
-  storage: &dyn Storage,
-  contract_addr: &Addr,
+    storage: &dyn Storage,
+    contract_addr: &Addr,
 ) -> Result<ContractID, ContractError> {
-  if let Some(id) = CONTRACT_ADDR_2_ID.may_load(storage, contract_addr)? {
-    Ok(id.into())
-  } else {
-    Err(ContractError::NotAuthorized {
-      reason: "Unrecognized contract address".to_owned(),
-    })
-  }
+    if let Some(id) = CONTRACT_ADDR_2_ID.may_load(storage, contract_addr)? {
+        Ok(id.into())
+    } else {
+        Err(ContractError::NotAuthorized {
+            reason: "Unrecognized contract address".to_owned(),
+        })
+    }
 }
 
 pub fn load_next_contract_id(
-  storage: &mut dyn Storage,
-  contract_addr: &Addr,
+    storage: &mut dyn Storage,
+    contract_addr: &Addr,
 ) -> Result<u64, ContractError> {
-  // Make sure that the contract doesn't already exist.
-  if CONTRACT_ADDR_2_ID.has(storage, contract_addr) {
-    return Err(ContractError::NotAuthorized {
-      reason: "address already exists".to_owned(),
-    });
-  }
-  // Increment and return the ID counter. This is the new Id.
-  let contract_id: ContractID = CONTRACT_ID_COUNTER
-    .update(storage, |counter| -> Result<_, ContractError> {
-      Ok(counter + Uint64::one())
-    })?
-    .into();
+    // Make sure that the contract doesn't already exist.
+    if CONTRACT_ADDR_2_ID.has(storage, contract_addr) {
+        return Err(ContractError::NotAuthorized {
+            reason: "address already exists".to_owned(),
+        });
+    }
+    // Increment and return the ID counter. This is the new Id.
+    let contract_id: ContractID = CONTRACT_ID_COUNTER
+        .update(storage, |counter| -> Result<_, ContractError> {
+            Ok(counter + Uint64::one())
+        })?
+        .into();
 
-  CONTRACT_ADDR_2_ID.save(storage, contract_addr, &contract_id.into())?;
-  CONTRACT_ID_2_ADDR.save(storage, contract_id.into(), contract_addr)?;
+    CONTRACT_ADDR_2_ID.save(storage, contract_addr, &contract_id.into())?;
+    CONTRACT_ID_2_ADDR.save(storage, contract_id.into(), contract_addr)?;
 
-  Ok(contract_id)
+    Ok(contract_id)
 }
 
 pub fn create_relationship(
-  storage: &mut dyn Storage,
-  contract_id: ContractID,
-  addr: &Addr,
-  name: &String,
+    storage: &mut dyn Storage,
+    contract_id: ContractID,
+    addr: &Addr,
+    name: &String,
 ) -> Result<(), ContractError> {
-  REL_ADDR_2_CONTRACT_ID.save(storage, (addr.into(), name.clone(), contract_id.to_string()), &X)?;
-  REL_CONTRACT_ID_2_ADDR.save(storage, (contract_id, name.clone(), addr.to_string()), &X)?;
-  Ok(())
+    REL_ADDR_2_CONTRACT_ID.save(
+        storage,
+        (addr.into(), name.clone(), contract_id.to_string()),
+        &X,
+    )?;
+    REL_CONTRACT_ID_2_ADDR.save(storage, (contract_id, name.clone(), addr.to_string()), &X)?;
+    Ok(())
 }
 
 pub fn delete_relationship(
-  storage: &mut dyn Storage,
-  contract_id: ContractID,
-  addr: &Addr,
-  name: &String,
+    storage: &mut dyn Storage,
+    contract_id: ContractID,
+    addr: &Addr,
+    name: &String,
 ) -> Result<(), ContractError> {
-  REL_ADDR_2_CONTRACT_ID.remove(storage, (addr.into(), name.clone(), contract_id.to_string()));
-  REL_CONTRACT_ID_2_ADDR.remove(storage, (contract_id, name.clone(), addr.to_string()));
-  Ok(())
+    REL_ADDR_2_CONTRACT_ID.remove(
+        storage,
+        (addr.into(), name.clone(), contract_id.to_string()),
+    );
+    REL_CONTRACT_ID_2_ADDR.remove(storage, (contract_id, name.clone(), addr.to_string()));
+    Ok(())
 }
 
 pub fn increment_tag_count(
-  storage: &mut dyn Storage,
-  partition: PartitionID,
-  tag: &String,
+    storage: &mut dyn Storage,
+    partition: PartitionID,
+    tag: &String,
 ) -> Result<u32, ContractError> {
-  PARTITION_TAG_COUNTS.update(storage, (partition, &tag), |n| -> Result<_, ContractError> {
-    n.unwrap_or_default()
-      .checked_add(1)
-      .ok_or_else(|| ContractError::UnexpectedError {
-        reason: format!(
-          "Overflow incrementing count for tag '{}' in partition {}",
-          tag, partition
-        ),
-      })
-  })
+    PARTITION_TAG_COUNTS.update(
+        storage,
+        (partition, &tag),
+        |n| -> Result<_, ContractError> {
+            n.unwrap_or_default()
+                .checked_add(1)
+                .ok_or_else(|| ContractError::UnexpectedError {
+                    reason: format!(
+                        "Overflow incrementing count for tag '{}' in partition {}",
+                        tag, partition
+                    ),
+                })
+        },
+    )
 }
 
 pub fn decrement_tag_count(
-  storage: &mut dyn Storage,
-  partition: PartitionID,
-  tag: &String,
+    storage: &mut dyn Storage,
+    partition: PartitionID,
+    tag: &String,
 ) -> Result<u32, ContractError> {
-  PARTITION_TAG_COUNTS.update(storage, (partition, &tag), |n| -> Result<_, ContractError> {
-    n.unwrap_or_default()
-      .checked_sub(1)
-      .ok_or_else(|| ContractError::UnexpectedError {
-        reason: format!(
-          "error subtracting tag count of 0 for tag '{}' in partition {}",
-          tag, partition
-        ),
-      })
-  })
+    PARTITION_TAG_COUNTS.update(
+        storage,
+        (partition, &tag),
+        |n| -> Result<_, ContractError> {
+            n.unwrap_or_default()
+                .checked_sub(1)
+                .ok_or_else(|| ContractError::UnexpectedError {
+                    reason: format!(
+                        "error subtracting tag count of 0 for tag '{}' in partition {}",
+                        tag, partition
+                    ),
+                })
+        },
+    )
 }
 
 pub fn load_one_contract_record(
-  storage: &dyn Storage,
-  id: u64,
-  maybe_detail_level: Option<Details>,
+    storage: &dyn Storage,
+    id: u64,
+    maybe_detail_level: Option<Details>,
 ) -> Result<ContractRecord, ContractError> {
-  let record = ContractRecord {
-    address: load_contract_addr(storage, id)?,
-    meta: if let Some(level) = &maybe_detail_level {
-      Some(build_contract_metadata_view(storage, id, *level == Details::Full)?)
-    } else {
-      None
-    },
-  };
-  Ok(record)
+    let record = ContractRecord {
+        address: load_contract_addr(storage, id)?,
+        meta: if let Some(level) = &maybe_detail_level {
+            Some(build_contract_metadata_view(
+                storage,
+                id,
+                *level == Details::Full,
+            )?)
+        } else {
+            None
+        },
+    };
+    Ok(record)
 }
 
 pub fn load_contract_records(
-  storage: &dyn Storage,
-  contract_ids: &Vec<u64>,
-  maybe_detail_level: Option<Details>,
+    storage: &dyn Storage,
+    contract_ids: &Vec<u64>,
+    maybe_detail_level: Option<Details>,
 ) -> Result<Vec<ContractRecord>, ContractError> {
-  let mut contracts: Vec<ContractRecord> = Vec::with_capacity(contract_ids.len());
+    let mut contracts: Vec<ContractRecord> = Vec::with_capacity(contract_ids.len());
 
-  for id in contract_ids.iter() {
-    let record = ContractRecord {
-      address: load_contract_addr(storage, *id)?,
-      meta: if let Some(level) = &maybe_detail_level {
-        Some(build_contract_metadata_view(storage, *id, *level == Details::Full)?)
-      } else {
-        None
-      },
-    };
-    contracts.push(record);
-  }
+    for id in contract_ids.iter() {
+        let record = ContractRecord {
+            address: load_contract_addr(storage, *id)?,
+            meta: if let Some(level) = &maybe_detail_level {
+                Some(build_contract_metadata_view(
+                    storage,
+                    *id,
+                    *level == Details::Full,
+                )?)
+            } else {
+                None
+            },
+        };
+        contracts.push(record);
+    }
 
-  Ok(contracts)
+    Ok(contracts)
 }
 
 pub fn resolve_partition_id(
-  storage: &dyn Storage,
-  selector: PartitionSelector,
+    storage: &dyn Storage,
+    selector: PartitionSelector,
 ) -> Result<PartitionID, ContractError> {
-  Ok(match selector {
-    PartitionSelector::Id(id) => id,
-    PartitionSelector::Name(name) => {
-      PARTITION_NAME_2_ID
-        .load(storage, name.clone())
-        .map_err(|_| ContractError::PartitionNotFound {
-          reason: format!("Partition '{}' does not exist", name),
-        })?
-    },
-  })
+    Ok(match selector {
+        PartitionSelector::Id(id) => id,
+        PartitionSelector::Name(name) => {
+            PARTITION_NAME_2_ID
+                .load(storage, name.clone())
+                .map_err(|_| ContractError::PartitionNotFound {
+                    reason: format!("Partition '{}' does not exist", name),
+                })?
+        },
+    })
 }
 
 pub fn append_group(
-  storage: &mut dyn Storage,
-  group_id: GroupID,
-  contract_id: ContractID,
+    storage: &mut dyn Storage,
+    group_id: GroupID,
+    contract_id: ContractID,
 ) -> Result<(), ContractError> {
-  if IX_GROUP.has(storage, (group_id, contract_id)) {
-    return Ok(());
-  }
-
-  IX_GROUP.save(storage, (group_id, contract_id), &X)?;
-  CONTRACT_GROUP_IDS.save(storage, (contract_id, group_id), &X)?;
-
-  GROUP_METADATA.update(storage, group_id, |maybe_meta| -> Result<_, ContractError> {
-    if let Some(mut meta) = maybe_meta {
-      meta.size = meta
-        .size
-        .checked_add(Uint64::one())
-        .map_err(|e| ContractError::UnexpectedError {
-          reason: format!("Error incrementing group {} size: {}", group_id, e.to_string()),
-        })?;
-      Ok(meta)
-    } else {
-      Err(ContractError::UnexpectedError {
-        reason: format!("Group {} not found", group_id),
-      })
+    if IX_GROUP.has(storage, (group_id, contract_id)) {
+        return Ok(());
     }
-  })?;
-  Ok(())
+
+    IX_GROUP.save(storage, (group_id, contract_id), &X)?;
+    CONTRACT_GROUP_IDS.save(storage, (contract_id, group_id), &X)?;
+
+    GROUP_METADATA.update(
+        storage,
+        group_id,
+        |maybe_meta| -> Result<_, ContractError> {
+            if let Some(mut meta) = maybe_meta {
+                meta.size = meta.size.checked_add(Uint64::one()).map_err(|e| {
+                    ContractError::UnexpectedError {
+                        reason: format!(
+                            "Error incrementing group {} size: {}",
+                            group_id,
+                            e.to_string()
+                        ),
+                    }
+                })?;
+                Ok(meta)
+            } else {
+                Err(ContractError::UnexpectedError {
+                    reason: format!("Group {} not found", group_id),
+                })
+            }
+        },
+    )?;
+    Ok(())
 }
 
 pub fn remove_from_group(
-  storage: &mut dyn Storage,
-  group_id: GroupID,
-  contract_id: ContractID,
+    storage: &mut dyn Storage,
+    group_id: GroupID,
+    contract_id: ContractID,
 ) -> Result<(), ContractError> {
-  if !IX_GROUP.has(storage, (group_id, contract_id)) {
-    return Ok(());
-  }
-
-  IX_GROUP.remove(storage, (group_id, contract_id));
-  CONTRACT_GROUP_IDS.remove(storage, (contract_id, group_id));
-
-  GROUP_METADATA.update(storage, group_id, |maybe_meta| -> Result<_, ContractError> {
-    if let Some(mut meta) = maybe_meta {
-      meta.size = meta
-        .size
-        .checked_sub(Uint64::one())
-        .map_err(|e| ContractError::UnexpectedError {
-          reason: format!("Error decrementing group {} size: {}", group_id, e.to_string()),
-        })?;
-      Ok(meta)
-    } else {
-      Err(ContractError::UnexpectedError {
-        reason: format!("Group {} not found", group_id),
-      })
+    if !IX_GROUP.has(storage, (group_id, contract_id)) {
+        return Ok(());
     }
-  })?;
-  Ok(())
+
+    IX_GROUP.remove(storage, (group_id, contract_id));
+    CONTRACT_GROUP_IDS.remove(storage, (contract_id, group_id));
+
+    GROUP_METADATA.update(
+        storage,
+        group_id,
+        |maybe_meta| -> Result<_, ContractError> {
+            if let Some(mut meta) = maybe_meta {
+                meta.size = meta.size.checked_sub(Uint64::one()).map_err(|e| {
+                    ContractError::UnexpectedError {
+                        reason: format!(
+                            "Error decrementing group {} size: {}",
+                            group_id,
+                            e.to_string()
+                        ),
+                    }
+                })?;
+                Ok(meta)
+            } else {
+                Err(ContractError::UnexpectedError {
+                    reason: format!("Group {} not found", group_id),
+                })
+            }
+        },
+    )?;
+    Ok(())
 }
 
 pub fn load_contract_group_ids(
-  storage: &dyn Storage,
-  contract_id: ContractID,
+    storage: &dyn Storage,
+    contract_id: ContractID,
 ) -> Result<Vec<GroupID>, ContractError> {
-  let mut group_ids: Vec<GroupID> = Vec::with_capacity(2);
-  for result in CONTRACT_GROUP_IDS
-    .prefix(contract_id)
-    .keys(storage, None, None, Order::Ascending)
-  {
-    let group_id = result.map_err(|e| ContractError::UnexpectedError {
-      reason: format!("error loading contract {} group ids: {}", contract_id, e.to_string()),
-    })?;
-    group_ids.push(group_id);
-  }
-  Ok(group_ids)
+    let mut group_ids: Vec<GroupID> = Vec::with_capacity(2);
+    for result in CONTRACT_GROUP_IDS
+        .prefix(contract_id)
+        .keys(storage, None, None, Order::Ascending)
+    {
+        let group_id = result.map_err(|e| ContractError::UnexpectedError {
+            reason: format!(
+                "error loading contract {} group ids: {}",
+                contract_id,
+                e.to_string()
+            ),
+        })?;
+        group_ids.push(group_id);
+    }
+    Ok(group_ids)
 }
 
 pub fn create_partition(
-  storage: &mut dyn Storage,
-  time: Timestamp,
-  params: &PartitionCreationParams,
+    storage: &mut dyn Storage,
+    time: Timestamp,
+    params: &PartitionCreationParams,
 ) -> Result<PartitionID, ContractError> {
-  let partition_id = increment_next_partition_id(storage)?;
-  let name = params.name.clone().unwrap_or_else(|| partition_id.to_string());
+    let partition_id = increment_next_partition_id(storage)?;
+    let name = params
+        .name
+        .clone()
+        .unwrap_or_else(|| partition_id.to_string());
 
-  // Save id into name -> ID lookup table.
-  PARTITION_NAME_2_ID.save(storage, name.clone(), &partition_id)?;
+    // Save id into name -> ID lookup table.
+    PARTITION_NAME_2_ID.save(storage, name.clone(), &partition_id)?;
 
-  // Init partition metadata state.
-  PARTITION_METADATA.update(storage, partition_id, |maybe_meta| -> Result<_, ContractError> {
-    if maybe_meta.is_some() {
-      Err(ContractError::NotAuthorized {
-        reason: format!("partition {} already exists", partition_id),
-      })
-    } else {
-      Ok(PartitionMetadata {
-        description: params.description.clone(),
-        created_at: time,
-        name,
-      })
-    }
-  })?;
+    // Init partition metadata state.
+    PARTITION_METADATA.update(
+        storage,
+        partition_id,
+        |maybe_meta| -> Result<_, ContractError> {
+            if maybe_meta.is_some() {
+                Err(ContractError::NotAuthorized {
+                    reason: format!("partition {} already exists", partition_id),
+                })
+            } else {
+                Ok(PartitionMetadata {
+                    description: params.description.clone(),
+                    created_at: time,
+                    name,
+                })
+            }
+        },
+    )?;
 
-  Ok(partition_id)
+    Ok(partition_id)
 }
 
 fn increment_next_partition_id(storage: &mut dyn Storage) -> Result<PartitionID, ContractError> {
-  PARTITION_ID_COUNTER.update(storage, |n| -> Result<_, ContractError> {
-    n.checked_add(1).ok_or_else(|| ContractError::UnexpectedError {
-      reason: "unexpected overflow incrementing partition ID counter".to_owned(),
+    PARTITION_ID_COUNTER.update(storage, |n| -> Result<_, ContractError> {
+        n.checked_add(1)
+            .ok_or_else(|| ContractError::UnexpectedError {
+                reason: "unexpected overflow incrementing partition ID counter".to_owned(),
+            })
     })
-  })
 }
 
 pub fn exists_contract_address(
-  storage: &dyn Storage,
-  addr: &Addr,
+    storage: &dyn Storage,
+    addr: &Addr,
 ) -> bool {
-  CONTRACT_ADDR_2_ID.has(storage, addr)
+    CONTRACT_ADDR_2_ID.has(storage, addr)
 }

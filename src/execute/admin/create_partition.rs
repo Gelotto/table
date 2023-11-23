@@ -1,21 +1,22 @@
-use cosmwasm_std::{DepsMut, Env, MessageInfo, Response};
+use cosmwasm_std::Response;
 
 use crate::{
-  error::ContractError,
-  msg::PartitionCreationParams,
-  state::{create_partition, ensure_sender_allowed},
+    error::ContractError,
+    execute::Context,
+    msg::PartitionCreationParams,
+    state::{create_partition, ensure_sender_allowed},
 };
 
 pub fn on_execute(
-  deps: DepsMut,
-  env: Env,
-  info: MessageInfo,
-  params: PartitionCreationParams,
+    ctx: Context,
+    params: PartitionCreationParams,
 ) -> Result<Response, ContractError> {
-  let action = "create_partition";
+    let Context { deps, env, info } = ctx;
+    let action = "create_partition";
 
-  ensure_sender_allowed(deps.storage, deps.querier, &info.sender, action)?;
-  create_partition(deps.storage, env.block.time, &params)?;
+    ensure_sender_allowed(&deps, &info.sender, "/table/create-partition")?;
 
-  Ok(Response::new().add_attribute("action", action))
+    create_partition(deps.storage, env.block.time, &params)?;
+
+    Ok(Response::new().add_attribute("action", action))
 }

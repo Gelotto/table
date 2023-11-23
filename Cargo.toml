@@ -38,7 +38,7 @@ schemars = "0.8.12"
 serde = { version = "1.0.180", default-features = false, features = ["derive"] }
 thiserror = { version = "1.0.44" }
 cw-lib = { version = "0.3.0", path = "../cw-lib" }
-cw-acl = { version = "0.0.4", path = "../cw-acl", features = ["library"] }
+cw-acl = { version = "0.1.0", path = "../cw-acl", features = ["library"] }
 
 [dev-dependencies]
 cw-multi-test = { version = "0.16.5" }
