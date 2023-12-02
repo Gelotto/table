@@ -4,7 +4,7 @@ use crate::{
     error::ContractError,
     execute::Context,
     msg::{IndexCreationParams, IndexMetadata},
-    state::{ensure_sender_allowed, INDEX_METADATA},
+    state::{ensure_allowed_by_acl, INDEX_METADATA},
 };
 
 pub fn on_execute(
@@ -14,7 +14,7 @@ pub fn on_execute(
     let action = "create_index";
     let Context { deps, info, .. } = ctx;
 
-    ensure_sender_allowed(&deps, &info.sender, "/table/create-index")?;
+    ensure_allowed_by_acl(&deps, &info.sender, "/table/create-index")?;
 
     INDEX_METADATA.update(
         deps.storage,

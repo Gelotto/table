@@ -6,8 +6,8 @@ use crate::{
     execute::Context,
     msg::{IndexType, PartitionSelector},
     state::{
-        decrement_tag_count, ensure_contract_not_suspended, ensure_partition_exists,
-        ensure_sender_allowed, increment_tag_count, load_contract_id, resolve_partition_id,
+        decrement_tag_count, ensure_allowed_by_acl, ensure_contract_not_suspended,
+        ensure_partition_exists, increment_tag_count, load_contract_id, resolve_partition_id,
         ContractID, CustomIndexMap, PartitionID, CONTRACT_DYN_METADATA, CONTRACT_INDEX_TYPES,
         CONTRACT_METADATA, CONTRACT_TAGS, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY,
         IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, VALUES_BINARY, VALUES_BOOL,
@@ -29,7 +29,7 @@ pub fn on_execute(
 
     let dst_partition = resolve_partition_id(deps.storage, dst_selector)?;
 
-    ensure_sender_allowed(&deps, &info.sender, "/table/set-partition")?;
+    ensure_allowed_by_acl(&deps, &info.sender, "/table/set-partition")?;
     ensure_partition_exists(deps.storage, dst_partition)?;
 
     let contract_id = load_contract_id(deps.storage, &contract_addr)?;

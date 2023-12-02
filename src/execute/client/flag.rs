@@ -7,7 +7,7 @@ use crate::{
     models::ContractFlag,
     msg::FlagParams,
     state::{
-        ensure_contract_not_suspended, ensure_sender_allowed, load_contract_id,
+        ensure_allowed_by_acl, ensure_contract_not_suspended, load_contract_id,
         CONTRACT_SUSPENSIONS,
     },
 };
@@ -25,7 +25,7 @@ pub fn on_execute(
     // If sender isn't the contract itself, only allow sender if auth'd by owner
     // address or ACL.
     if contract_addr != info.sender {
-        ensure_sender_allowed(&deps, &info.sender, "/table/flag")?;
+        ensure_allowed_by_acl(&deps, &info.sender, "/table/flag")?;
     } else {
         ensure_contract_not_suspended(deps.storage, contract_id)?;
     };

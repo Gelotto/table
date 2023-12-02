@@ -4,7 +4,7 @@ use crate::{
     error::ContractError,
     execute::Context,
     msg::PartitionCreationParams,
-    state::{create_partition, ensure_sender_allowed},
+    state::{create_partition, ensure_allowed_by_acl},
 };
 
 pub fn on_execute(
@@ -14,7 +14,7 @@ pub fn on_execute(
     let Context { deps, env, info } = ctx;
     let action = "create_partition";
 
-    ensure_sender_allowed(&deps, &info.sender, "/table/create-partition")?;
+    ensure_allowed_by_acl(&deps, &info.sender, "/table/create-partition")?;
 
     create_partition(deps.storage, env.block.time, &params)?;
 

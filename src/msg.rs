@@ -32,23 +32,6 @@ pub enum AdminMsg {
     Unsuspend(Addr),
     DeleteIndex(String),
 }
-// {
-//   "client": {
-//     "delete": "juno14lhdfvjugrvmk4uwj7m2w2xkmn68ytl7awn8nl4v8d39k8a6p8vs8wpcu3"
-//   }
-// }
-// {
-//   "principal": {
-//     "allow": {
-//       "principal": {
-//         "address": "juno1ad8evruzjjmgjc0w0520qx2l3yc73rjtafxmzu"
-//       },
-//       "resources": [
-//         "/table"
-//       ]
-//     }
-//   }
-// }
 
 #[cw_serde]
 pub enum ClientMsg {

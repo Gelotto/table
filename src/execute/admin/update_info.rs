@@ -4,7 +4,7 @@ use crate::{
     error::ContractError,
     execute::Context,
     msg::TableInfo,
-    state::{ensure_sender_allowed, TABLE_INFO},
+    state::{ensure_allowed_by_acl, TABLE_INFO},
 };
 
 // Replace the existing config info object.
@@ -15,7 +15,7 @@ pub fn on_execute(
     let Context { deps, info, .. } = ctx;
     let action = "update_info";
 
-    ensure_sender_allowed(&deps, &info.sender, "/table/update-info")?;
+    ensure_allowed_by_acl(&deps, &info.sender, "/table/update-info")?;
 
     TABLE_INFO.save(deps.storage, &table_info)?;
 

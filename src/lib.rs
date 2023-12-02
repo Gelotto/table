@@ -1,3 +1,5 @@
+#[cfg(feature = "library")]
+pub mod client;
 #[cfg(not(feature = "library"))]
 pub mod contract;
 mod ensure;

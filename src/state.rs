@@ -193,7 +193,7 @@ pub fn build_contract_metadata_view(
     })
 }
 
-pub fn ensure_sender_allowed(
+pub fn ensure_allowed_by_acl(
     deps: &DepsMut,
     principal: &Addr,
     action: &str,

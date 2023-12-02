@@ -4,7 +4,7 @@ use crate::{
     models::DynamicContractMetadata,
     msg::{IndexType, KeyValue, Relationship, RelationshipUpdates, TagUpdates, UpdateParams},
     state::{
-        decrement_tag_count, ensure_contract_not_suspended, ensure_sender_allowed,
+        decrement_tag_count, ensure_allowed_by_acl, ensure_contract_not_suspended,
         increment_tag_count, load_contract_id, ContractID, CustomIndexMap, PartitionID,
         CONTRACT_DYN_METADATA, CONTRACT_INDEX_TYPES, CONTRACT_METADATA, CONTRACT_TAGS,
         INDEX_METADATA, IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, REL_ADDR_2_CONTRACT_ID,
@@ -26,7 +26,7 @@ pub fn on_execute(
     // Get address of contract whose state we will update. If sender isn't the
     // contract itself, only allow sender if auth'd by owner address or ACL.
     let contract_addr = if params.contract != info.sender {
-        ensure_sender_allowed(&deps, &info.sender, "/table/update")?;
+        ensure_allowed_by_acl(&deps, &info.sender, "/table/update")?;
         deps.api.addr_validate(params.contract.as_str())?
     } else {
         info.sender

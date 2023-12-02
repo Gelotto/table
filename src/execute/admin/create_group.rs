@@ -5,7 +5,7 @@ use crate::{
     execute::Context,
     msg::{GroupCreationParams, GroupMetadata},
     state::{
-        ensure_sender_allowed, GroupID, GROUP_ID_COUNTER, GROUP_IX_CREATED_AT, GROUP_IX_NAME,
+        ensure_allowed_by_acl, GroupID, GROUP_ID_COUNTER, GROUP_IX_CREATED_AT, GROUP_IX_NAME,
         GROUP_METADATA, X,
     },
 };
@@ -17,7 +17,7 @@ pub fn on_execute(
     let Context { deps, env, info } = ctx;
     let action = "create_groups";
 
-    ensure_sender_allowed(&deps, &info.sender, "/table/create-groups")?;
+    ensure_allowed_by_acl(&deps, &info.sender, "/table/create-groups")?;
 
     let group_id = increment_next_group_id(deps.storage)?;
     let name = params.name.unwrap_or_else(|| group_id.to_string());

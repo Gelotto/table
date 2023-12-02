@@ -5,7 +5,7 @@ use crate::{
     error::ContractError,
     execute::Context,
     msg::IndexType,
-    state::{ensure_sender_allowed, ContractID, PartitionID, INDEX_METADATA},
+    state::{ensure_allowed_by_acl, ContractID, PartitionID, INDEX_METADATA},
     util::build_index_storage_key,
 };
 
@@ -15,7 +15,7 @@ pub fn on_execute(
 ) -> Result<Response, ContractError> {
     let Context { deps, info, .. } = ctx;
 
-    ensure_sender_allowed(&deps, &info.sender, "/table/delete-index")?;
+    ensure_allowed_by_acl(&deps, &info.sender, "/table/delete-index")?;
 
     if let Some(meta) = INDEX_METADATA.may_load(deps.storage, index_name.clone())? {
         INDEX_METADATA.remove(deps.storage, index_name.clone());

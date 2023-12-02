@@ -4,7 +4,7 @@ use crate::{
     error::ContractError,
     execute::Context,
     msg::GroupUpdates,
-    state::{append_group, ensure_sender_allowed, load_contract_id, remove_from_group},
+    state::{append_group, ensure_allowed_by_acl, load_contract_id, remove_from_group},
 };
 
 pub fn on_execute(
@@ -12,7 +12,7 @@ pub fn on_execute(
     updates: GroupUpdates,
 ) -> Result<Response, ContractError> {
     let Context { deps, info, .. } = ctx;
-    ensure_sender_allowed(&deps, &info.sender, "/table/assign-groups")?;
+    ensure_allowed_by_acl(&deps, &info.sender, "/table/assign-groups")?;
 
     let contract_addr = updates.contract;
     let contract_id = load_contract_id(deps.storage, &contract_addr)?;

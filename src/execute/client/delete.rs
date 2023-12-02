@@ -9,7 +9,7 @@ use crate::{
     models::ContractFlag,
     msg::IndexType,
     state::{
-        ensure_contract_not_suspended, ensure_sender_allowed, load_contract_id, remove_from_group,
+        ensure_allowed_by_acl, ensure_contract_not_suspended, load_contract_id, remove_from_group,
         ContractID, CONTRACT_ADDR_2_ID, CONTRACT_DYN_METADATA, CONTRACT_GROUP_IDS,
         CONTRACT_ID_2_ADDR, CONTRACT_INDEX_TYPES, CONTRACT_METADATA, CONTRACT_SUSPENSIONS,
         CONTRACT_TAGS, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_TAG,
@@ -34,7 +34,7 @@ pub fn on_execute(
     // If sender isn't the contract itself, only allow sender if auth'd by owner
     // address or ACL.
     if contract_addr != info.sender {
-        ensure_sender_allowed(&deps, &info.sender, "/table/delete")?;
+        ensure_allowed_by_acl(&deps, &info.sender, "/table/delete")?;
     } else {
         ensure_contract_not_suspended(deps.storage, contract_id)?;
     };
