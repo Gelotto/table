@@ -4,9 +4,9 @@ use cosmwasm_std::{
 use cw_lib::utils::state::increment;
 
 use crate::{
+    context::Context,
     ensure::ensure_authorized_code_id,
     error::ContractError,
-    execute::Context,
     models::{ContractMetadata, ReplyJob},
     msg::CreationParams,
     state::{

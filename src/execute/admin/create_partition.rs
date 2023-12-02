@@ -1,8 +1,8 @@
 use cosmwasm_std::Response;
 
 use crate::{
+    context::Context,
     error::ContractError,
-    execute::Context,
     msg::PartitionCreationParams,
     state::{create_partition, ensure_allowed_by_acl},
 };

@@ -1,8 +1,8 @@
 use cosmwasm_std::{Response, Storage, Uint64};
 
 use crate::{
+    context::Context,
     error::ContractError,
-    execute::Context,
     msg::{GroupCreationParams, GroupMetadata},
     state::{
         ensure_allowed_by_acl, GroupID, GROUP_ID_COUNTER, GROUP_IX_CREATED_AT, GROUP_IX_NAME,

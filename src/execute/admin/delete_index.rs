@@ -2,8 +2,8 @@ use cosmwasm_std::Response;
 use cw_storage_plus::Map;
 
 use crate::{
+    context::Context,
     error::ContractError,
-    execute::Context,
     msg::IndexType,
     state::{ensure_allowed_by_acl, ContractID, PartitionID, INDEX_METADATA},
     util::build_index_storage_key,

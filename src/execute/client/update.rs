@@ -1,6 +1,6 @@
 use crate::{
+    context::Context,
     error::ContractError,
-    execute::Context,
     models::DynamicContractMetadata,
     msg::{IndexType, KeyValue, Relationship, RelationshipUpdates, TagUpdates, UpdateParams},
     state::{

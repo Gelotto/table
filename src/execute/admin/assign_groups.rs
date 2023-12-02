@@ -1,8 +1,8 @@
 use cosmwasm_std::Response;
 
 use crate::{
+    context::Context,
     error::ContractError,
-    execute::Context,
     msg::GroupUpdates,
     state::{append_group, ensure_allowed_by_acl, load_contract_id, remove_from_group},
 };

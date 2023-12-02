@@ -4,8 +4,8 @@ use cosmwasm_std::{Addr, Order, Response, StdResult, Storage, Uint64};
 use cw_storage_plus::{Bound, Deque};
 
 use crate::{
+    context::Context,
     error::ContractError,
-    execute::Context,
     models::ContractFlag,
     msg::IndexType,
     state::{

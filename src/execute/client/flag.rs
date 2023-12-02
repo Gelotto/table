@@ -2,8 +2,8 @@ use cosmwasm_std::{attr, Response};
 use cw_storage_plus::Deque;
 
 use crate::{
+    context::Context,
     error::ContractError,
-    execute::Context,
     models::ContractFlag,
     msg::FlagParams,
     state::{

@@ -1,8 +1,8 @@
 use cosmwasm_std::{Addr, Response};
 
 use crate::{
+    context::Context,
     error::ContractError,
-    execute::Context,
     state::{ensure_allowed_by_acl, CONTRACT_ADDR_2_ID, CONTRACT_SUSPENSIONS},
 };
 

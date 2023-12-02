@@ -1,6 +1,6 @@
 use cosmwasm_std::Response;
 
-use crate::{error::ContractError, execute::Context, msg::Config, state::save_config};
+use crate::{context::Context, error::ContractError, msg::Config, state::save_config};
 
 // Replace the existing config in its entirety.
 pub fn on_execute(

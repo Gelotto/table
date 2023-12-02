@@ -1,8 +1,8 @@
 use cosmwasm_std::Response;
 
 use crate::{
+    context::Context,
     error::ContractError,
-    execute::Context,
     msg::TableInfo,
     state::{ensure_allowed_by_acl, TABLE_INFO},
 };

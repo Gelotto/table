@@ -1,8 +1,8 @@
 use cosmwasm_std::{Response, Uint64};
 
 use crate::{
+    context::Context,
     error::ContractError,
-    execute::Context,
     msg::{IndexCreationParams, IndexMetadata},
     state::{ensure_allowed_by_acl, INDEX_METADATA},
 };

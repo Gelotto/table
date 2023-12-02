@@ -1,6 +1,6 @@
+use crate::context::Context;
 use crate::error::ContractError;
 use crate::execute;
-use crate::execute::Context;
 use crate::models::ReplyJob;
 use crate::msg::{
     AdminMsg, ClientMsg, ContractQueryMsg, ContractsQueryMsg, ExecuteMsg, InstantiateMsg,

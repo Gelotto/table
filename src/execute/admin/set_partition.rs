@@ -2,8 +2,8 @@ use cosmwasm_std::{Addr, Order, Response, StdResult, Storage, Uint64};
 use cw_storage_plus::Map;
 
 use crate::{
+    context::Context,
     error::ContractError,
-    execute::Context,
     msg::{IndexType, PartitionSelector},
     state::{
         decrement_tag_count, ensure_allowed_by_acl, ensure_contract_not_suspended,

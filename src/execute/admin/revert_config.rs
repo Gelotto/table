@@ -1,8 +1,8 @@
 use cosmwasm_std::{from_json, Response};
 
 use crate::{
+    context::Context,
     error::ContractError,
-    execute::Context,
     msg::Config,
     state::{ensure_allowed_by_acl, save_config, CONFIG_BACKUP},
 };
