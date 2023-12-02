@@ -7,7 +7,9 @@ use crate::msg::{
     PartitionCreationParams, PartitionMetadata, PartitionSelector, TableInfo,
 };
 use crate::{error::ContractError, models::ContractMetadata};
-use cosmwasm_std::{to_binary, Addr, Binary, DepsMut, Order, Storage, Timestamp, Uint128, Uint64};
+use cosmwasm_std::{
+    to_json_binary, Addr, Binary, DepsMut, Order, Storage, Timestamp, Uint128, Uint64,
+};
 use cw_acl::client::Acl;
 use cw_lib::models::Owner;
 use cw_storage_plus::{Item, Map};
@@ -253,7 +255,7 @@ pub fn save_config(
     // updated owner by executing the Restore msg.
     let prev_config = load_config(storage)?;
 
-    CONFIG_BACKUP.save(storage, &to_binary(&prev_config)?)?;
+    CONFIG_BACKUP.save(storage, &to_json_binary(&prev_config)?)?;
 
     // Overwrite existing config settings with new ones
     CONFIG_OWNER.save(storage, &config.owner)?;

@@ -8,8 +8,9 @@ use crate::msg::{
 };
 use crate::query;
 use crate::state::{self, load_reply_job};
-use cosmwasm_std::{entry_point, Reply};
-use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response};
+use cosmwasm_std::{
+    entry_point, to_json_binary, Binary, Deps, DepsMut, Env, MessageInfo, Reply, Response,
+};
 use cw2::set_contract_version;
 
 const CONTRACT_NAME: &str = "crates.io:cw-table";
@@ -99,36 +100,40 @@ pub fn query(
     let result = match msg {
         // Paginate top-level data structures related to the table.
         QueryMsg::Table(msg) => match msg {
-            TableQueryMsg::Indices(params) => to_binary(&query::table::indices(deps, params)?),
+            TableQueryMsg::Indices(params) => to_json_binary(&query::table::indices(deps, params)?),
             TableQueryMsg::Partitions(params) => {
-                to_binary(&query::table::partitions(deps, params)?)
+                to_json_binary(&query::table::partitions(deps, params)?)
             },
-            TableQueryMsg::Tags(params) => to_binary(&query::table::tags(deps, params)?),
-            TableQueryMsg::Groups(params) => to_binary(&query::table::groups(deps, params)?),
+            TableQueryMsg::Tags(params) => to_json_binary(&query::table::tags(deps, params)?),
+            TableQueryMsg::Groups(params) => to_json_binary(&query::table::groups(deps, params)?),
         },
         // Paginate collections of contracts by various means.
         QueryMsg::Contracts(msg) => match msg {
-            ContractsQueryMsg::Range(params) => to_binary(&query::contracts::range(deps, params)?),
+            ContractsQueryMsg::Range(params) => {
+                to_json_binary(&query::contracts::range(deps, params)?)
+            },
             ContractsQueryMsg::WithTag(params) => {
-                to_binary(&query::contracts::with_tag(deps, params)?)
+                to_json_binary(&query::contracts::with_tag(deps, params)?)
             },
             ContractsQueryMsg::InGroup(params) => {
-                to_binary(&query::contracts::in_group(deps, params)?)
+                to_json_binary(&query::contracts::in_group(deps, params)?)
             },
             ContractsQueryMsg::ByAddresses(mut params) => {
-                to_binary(&query::contracts::by_addresses(deps, &mut params)?)
+                to_json_binary(&query::contracts::by_addresses(deps, &mut params)?)
             },
             ContractsQueryMsg::RelatedTo(params) => {
-                to_binary(&query::contracts::related_to(deps, params)?)
+                to_json_binary(&query::contracts::related_to(deps, params)?)
             },
         },
         // Paginate relationshps, groups, & tags associated with a given contract.
         QueryMsg::Contract(msg) => match msg {
             ContractQueryMsg::Relationships(params) => {
-                to_binary(&query::contract::relationships(deps, params)?)
+                to_json_binary(&query::contract::relationships(deps, params)?)
             },
-            ContractQueryMsg::Groups(params) => to_binary(&query::contract::groups(deps, params)?),
-            ContractQueryMsg::Tags(params) => to_binary(&query::contract::tags(deps, params)?),
+            ContractQueryMsg::Groups(params) => {
+                to_json_binary(&query::contract::groups(deps, params)?)
+            },
+            ContractQueryMsg::Tags(params) => to_json_binary(&query::contract::tags(deps, params)?),
         },
     }?;
     Ok(result)

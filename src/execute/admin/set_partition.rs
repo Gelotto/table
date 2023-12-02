@@ -9,9 +9,9 @@ use crate::{
         decrement_tag_count, ensure_contract_not_suspended, ensure_partition_exists,
         ensure_sender_allowed, increment_tag_count, load_contract_id, resolve_partition_id,
         ContractID, CustomIndexMap, PartitionID, CONTRACT_DYN_METADATA, CONTRACT_INDEX_TYPES,
-        CONTRACT_METADATA, CONTRACT_TAGS, IX_CODE_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_TAG,
-        IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, VALUES_BINARY, VALUES_BOOL, VALUES_STRING,
-        VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8, X,
+        CONTRACT_METADATA, CONTRACT_TAGS, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY,
+        IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, VALUES_BINARY, VALUES_BOOL,
+        VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8, X,
     },
     util::build_index_storage_key,
 };
@@ -119,6 +119,9 @@ fn move_standard_indices(
 ) -> Result<(), ContractError> {
     // Update core metadata indices
     let meta = CONTRACT_METADATA.load(storage, contract_id)?;
+
+    IX_CONTRACT_ID.remove(storage, (src, contract_id, contract_id));
+    IX_CONTRACT_ID.save(storage, (dst, contract_id.into(), contract_id), &X)?;
 
     IX_CODE_ID.remove(storage, (src, meta.code_id.into(), contract_id));
     IX_CODE_ID.save(storage, (dst, meta.code_id.into(), contract_id), &X)?;
