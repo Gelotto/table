@@ -12,4 +12,5 @@ pub mod msg;
 #[cfg(not(feature = "library"))]
 pub mod query;
 pub mod state;
+#[cfg(not(feature = "library"))]
 mod util;
