@@ -5,7 +5,6 @@ use crate::{
     state::{CODE_ID_ALLOWLIST, CONFIG_CODE_ID_ALLOWLIST_ENABLED},
 };
 
-#[cfg(not(feature = "library"))]
 pub fn ensure_authorized_code_id(
     storage: &dyn Storage,
     code_id: u64,

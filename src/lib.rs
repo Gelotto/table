@@ -3,6 +3,7 @@ pub mod client;
 mod context;
 #[cfg(not(feature = "library"))]
 pub mod contract;
+#[cfg(not(feature = "library"))]
 mod ensure;
 mod error;
 #[cfg(not(feature = "library"))]
