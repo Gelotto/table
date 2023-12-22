@@ -1,9 +1,9 @@
 [package]
 name = "cw-table"
-version = "0.0.2"
+version = "0.0.3"
 authors = []
 edition = "2021"
-description = "Smart Contract"
+description = "Smart Contract for indexing and querying collections of other smart contracts"
 license = "Apache-2.0"
 repository = ""
 homepage = ""

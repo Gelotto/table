@@ -6,14 +6,15 @@ use crate::{
     state::{
         decrement_tag_count, ensure_allowed_by_acl, ensure_contract_not_suspended,
         increment_tag_count, load_contract_id, ContractID, CustomIndexMap, PartitionID,
-        CONTRACT_DYN_METADATA, CONTRACT_INDEX_TYPES, CONTRACT_METADATA, CONTRACT_TAGS,
-        INDEX_METADATA, IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, REL_ADDR_2_CONTRACT_ID,
-        REL_CONTRACT_ID_2_ADDR, VALUES_BINARY, VALUES_BOOL, VALUES_STRING, VALUES_TIME,
-        VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8, X,
+        CONFIG_STR_CASE_SENSITIVE, CONFIG_STR_MAX_LEN, CONTRACT_DYN_METADATA, CONTRACT_INDEX_TYPES,
+        CONTRACT_METADATA, CONTRACT_TAGS, INDEX_METADATA, IX_REV, IX_TAG, IX_UPDATED_AT,
+        IX_UPDATED_BY, NOT_UNIQUE, REL_ADDR_2_ID, REL_ID_2_ADDR, UNIQUE, VALUES_BINARY,
+        VALUES_BOOL, VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64,
+        VALUES_U8, X,
     },
-    util::build_index_storage_key,
+    util::{build_index_storage_key, pad, trim_padding},
 };
-use cosmwasm_std::{attr, Addr, Binary, Env, Response, Storage, Timestamp, Uint128, Uint64};
+use cosmwasm_std::{attr, Addr, Binary, Env, Order, Response, Storage, Timestamp, Uint128, Uint64};
 use cw_storage_plus::Map;
 
 pub fn on_execute(
@@ -34,27 +35,40 @@ pub fn on_execute(
 
     deps.api.addr_validate(params.initiator.as_str())?;
 
+    let initiator = params.initiator;
     let contract_id = load_contract_id(deps.storage, &contract_addr)?;
 
     ensure_contract_not_suspended(deps.storage, contract_id)?;
 
     let partition = CONTRACT_METADATA.load(deps.storage, contract_id)?.partition;
-    let initiator = params.initiator;
+    let max_str_len = CONFIG_STR_MAX_LEN.load(deps.storage)? as usize;
 
     // Update built-in and custom indices
     if let Some(index_updates) = params.values {
         upsert_metadata(deps.storage, &env, partition, &initiator, contract_id)?;
-        update_indices(deps.storage, partition, contract_id, index_updates)?;
+        update_indices(
+            deps.storage,
+            partition,
+            contract_id,
+            index_updates,
+            max_str_len,
+        )?;
     }
 
     // Update tags
     if let Some(tag_updates) = params.tags.clone() {
-        update_tags(deps.storage, partition, contract_id, tag_updates)?;
+        update_tags(
+            deps.storage,
+            partition,
+            contract_id,
+            tag_updates,
+            max_str_len,
+        )?;
     }
 
     // Update relationships
     if let Some(rel_updates) = params.relationships.clone() {
-        update_relationships(deps.storage, contract_id, rel_updates)?;
+        update_relationships(deps.storage, contract_id, rel_updates, max_str_len)?;
     }
 
     Ok(Response::new().add_attributes(vec![attr("action", action)]))
@@ -115,23 +129,57 @@ fn update_tags(
     partition: PartitionID,
     contract_id: ContractID,
     updates: TagUpdates,
+    max_str_len: usize,
 ) -> Result<(), ContractError> {
     if let Some(tags_to_remove) = &updates.remove {
-        for tag in tags_to_remove.iter() {
-            IX_TAG.remove(storage, (partition, tag, contract_id));
-            CONTRACT_TAGS.remove(storage, (contract_id, tag.clone()));
-            decrement_tag_count(storage, partition, tag)?;
+        for tag_string in tags_to_remove.iter() {
+            let tag_string = &pad(&tag_string.to_lowercase(), max_str_len);
+            IX_TAG.remove(storage, (partition, tag_string, contract_id));
+            CONTRACT_TAGS.remove(storage, (contract_id, tag_string.clone()));
+            decrement_tag_count(storage, partition, tag_string)?;
         }
     }
 
     if let Some(tags_to_add) = &updates.add {
         for tag in tags_to_add.iter() {
-            IX_TAG.save(storage, (partition, tag, contract_id), &X)?;
-            CONTRACT_TAGS.save(storage, (contract_id, tag.clone()), &X)?;
-            increment_tag_count(storage, partition, tag)?;
+            let tag_string = &pad(&tag.text.to_lowercase(), max_str_len);
+            ensure_uniqueness(storage, partition, &tag_string)?;
+            IX_TAG.save(
+                storage,
+                (partition, tag_string, contract_id),
+                &if tag.unique.unwrap_or(false) {
+                    UNIQUE
+                } else {
+                    NOT_UNIQUE
+                },
+            )?;
+            CONTRACT_TAGS.save(storage, (contract_id, tag_string.clone()), &X)?;
+            increment_tag_count(storage, partition, &tag_string)?;
         }
     }
 
+    Ok(())
+}
+fn ensure_uniqueness(
+    storage: &dyn Storage,
+    partition: PartitionID,
+    cannonical_tag: &String,
+) -> Result<(), ContractError> {
+    for entry in IX_TAG
+        .prefix((partition, cannonical_tag))
+        .range(storage, None, None, Order::Ascending)
+        .take(1)
+    {
+        let (_, uniqueness) = entry?;
+        if uniqueness == UNIQUE {
+            return Err(ContractError::NotAuthorized {
+                reason: format!(
+                    "tag {} is unique and already used",
+                    trim_padding(&cannonical_tag)
+                ),
+            });
+        }
+    }
     Ok(())
 }
 
@@ -139,16 +187,17 @@ fn update_relationships(
     storage: &mut dyn Storage,
     contract_id: ContractID,
     updates: RelationshipUpdates,
+    max_str_len: usize,
 ) -> Result<(), ContractError> {
     if let Some(rels) = &updates.remove {
         for rel in rels.iter() {
-            remove_relationship(storage, contract_id, &rel)?;
+            remove_relationship(storage, contract_id, &rel, max_str_len)?;
         }
     }
 
     if let Some(rels) = &updates.add {
         for rel in rels.iter() {
-            set_relationship(storage, contract_id, &rel)?;
+            set_relationship(storage, contract_id, &rel, max_str_len)?;
         }
     }
 
@@ -159,17 +208,37 @@ fn set_relationship(
     storage: &mut dyn Storage,
     contract_id: ContractID,
     rel: &Relationship,
+    max_str_len: usize,
 ) -> Result<(), ContractError> {
     let addr_str = rel.address.to_string();
-    REL_ADDR_2_CONTRACT_ID.save(
+    let rel_name = pad(&rel.name.to_lowercase(), max_str_len);
+    let uniqueness_u8 = if rel.unique { UNIQUE } else { NOT_UNIQUE };
+
+    // Check if a relationship with the given name already exists for the given
+    // address and abort if said relationship is unique.
+    for result in REL_ADDR_2_ID
+        .prefix((addr_str.clone(), rel_name.clone()))
+        .range(storage, None, None, Order::Ascending)
+        .take(1)
+    {
+        let (_, uniqueness) = result?;
+        if uniqueness == UNIQUE {
+            return Err(ContractError::ValidationError {
+                reason: format!("Relationship {} is unique", trim_padding(&rel_name)),
+            });
+        }
+    }
+
+    REL_ADDR_2_ID.save(
         storage,
-        (addr_str.clone(), rel.name.clone(), contract_id.to_string()),
-        &X,
+        (addr_str.clone(), rel_name.clone(), contract_id.to_string()),
+        &uniqueness_u8,
     )?;
-    REL_CONTRACT_ID_2_ADDR.save(
+
+    REL_ID_2_ADDR.save(
         storage,
-        (contract_id, rel.name.clone(), addr_str.clone()),
-        &X,
+        (contract_id, rel_name.clone(), addr_str.clone()),
+        &uniqueness_u8,
     )?;
     Ok(())
 }
@@ -178,18 +247,20 @@ fn remove_relationship(
     storage: &mut dyn Storage,
     contract_id: ContractID,
     rel: &Relationship,
+    max_str_len: usize,
 ) -> Result<(), ContractError> {
     let addr_str = rel.address.to_string();
-    if let Some(related_addr) = REL_CONTRACT_ID_2_ADDR
-        .may_load(storage, (contract_id, rel.name.clone(), addr_str.clone()))?
+    let rel_name = pad(&rel.name.to_lowercase(), max_str_len);
+    if let Some(related_addr) =
+        REL_ID_2_ADDR.may_load(storage, (contract_id, rel_name.clone(), addr_str.clone()))?
     {
-        REL_ADDR_2_CONTRACT_ID.remove(
+        REL_ADDR_2_ID.remove(
             storage,
-            (addr_str.clone(), rel.name.clone(), contract_id.to_string()),
+            (addr_str.clone(), rel_name.clone(), contract_id.to_string()),
         );
-        REL_CONTRACT_ID_2_ADDR.remove(
+        REL_ID_2_ADDR.remove(
             storage,
-            (contract_id, rel.name.clone(), related_addr.to_string()),
+            (contract_id, rel_name.clone(), related_addr.to_string()),
         );
     }
     Ok(())
@@ -200,14 +271,22 @@ fn update_indices(
     partition: PartitionID,
     contract_id: ContractID,
     index_updates: Vec<KeyValue>,
+    max_str_len: usize,
 ) -> Result<(), ContractError> {
     // Update each index for the given KeyValue. If the given value is None, use
     // this as a signal to remove the existing entry, if any, from the index.
+    let is_case_sensitive = CONFIG_STR_CASE_SENSITIVE.load(storage)?;
     for value in index_updates.iter() {
         match value {
-            KeyValue::String(key, value) => {
-                update_string_index(storage, partition, contract_id, key, value)?
-            },
+            KeyValue::String(key, value) => update_string_index(
+                storage,
+                partition,
+                contract_id,
+                key,
+                value,
+                max_str_len,
+                is_case_sensitive,
+            )?,
             KeyValue::Bool(key, value) => {
                 update_bool_index(storage, partition, contract_id, key, value)?
             },
@@ -277,12 +356,20 @@ fn update_string_index(
     contract_id: ContractID,
     index_name: &String,
     maybe_value: &Option<String>,
+    max_str_len: usize,
+    is_case_sensitive: bool,
 ) -> Result<(), ContractError> {
-    let index_slot = build_index_storage_key(index_name);
-    let index: CustomIndexMap<&String> = Map::new(&index_slot);
+    let index_storage_key = build_index_storage_key(index_name);
+    let index: CustomIndexMap<&String> = Map::new(&index_storage_key);
     let indexed_value_map = VALUES_STRING;
 
     if let Some(new_val) = maybe_value {
+        let case_adjusted_new_val = if is_case_sensitive {
+            new_val.clone()
+        } else {
+            new_val.to_lowercase()
+        };
+        let new_val = &pad(&case_adjusted_new_val, max_str_len);
         let index_key = (partition, new_val, contract_id);
         if index.has(storage, index_key) {
             return Ok(());

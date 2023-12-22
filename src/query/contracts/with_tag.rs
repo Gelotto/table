@@ -2,7 +2,8 @@ use std::marker::PhantomData;
 
 use crate::error::ContractError;
 use crate::msg::{ContractRecord, ContractsByTagResponse, TagQueryParams};
-use crate::state::{load_contract_records, IX_TAG};
+use crate::state::{load_contract_records, CONFIG_STR_MAX_LEN, IX_TAG};
+use crate::util::pad;
 use cosmwasm_std::{Deps, Order, Uint64};
 use cw_storage_plus::Bound;
 
@@ -33,12 +34,15 @@ pub fn with_tag(
         ),
     };
 
+    let max_str_len = CONFIG_STR_MAX_LEN.load(deps.storage)? as usize;
+    let cannonical_tag = pad(&params.tag, max_str_len).to_lowercase();
+
     // Collect contract ids, cursor and add them to push them on return vals
     let mut contract_ids: Vec<u64> = Vec::with_capacity(4);
     let mut cursor: Option<Uint64> = None;
 
     for maybe_contract_id in IX_TAG
-        .prefix((params.partition, &params.tag))
+        .prefix((params.partition, &cannonical_tag))
         .keys(deps.storage, min, max, order)
         .take(limit)
     {

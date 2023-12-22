@@ -2,9 +2,13 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 
 use crate::error::ContractError;
-use crate::msg::{ReadRelationshipResponse, RelatedContract, RelationshipQueryParams};
-use crate::state::{load_one_contract_record, ContractID, REL_ADDR_2_CONTRACT_ID};
-use crate::util::parse;
+use crate::msg::{
+    ReadRelationshipResponse, RelatedContract, RelationshipMetadata, RelationshipQueryParams,
+};
+use crate::state::{
+    load_one_contract_record, ContractID, CONFIG_STR_MAX_LEN, REL_ADDR_2_ID, UNIQUE,
+};
+use crate::util::{pad, parse, trim_padding};
 use cosmwasm_std::{Deps, Order};
 use cw_storage_plus::Bound;
 
@@ -20,6 +24,7 @@ pub fn related_to(
     deps: Deps,
     params: RelationshipQueryParams,
 ) -> Result<ReadRelationshipResponse, ContractError> {
+    let max_str_len = CONFIG_STR_MAX_LEN.load(deps.storage)? as usize;
     let limit = params.limit.unwrap_or(20).clamp(1, 100) as usize;
     let desc = params.desc.unwrap_or(false);
     let order = if desc {
@@ -27,39 +32,23 @@ pub fn related_to(
     } else {
         Order::Ascending
     };
-    // let (min, max) = match order {
-    //   Order::Ascending => (
-    //     params.cursor.and_then(|(rel_name, c_id)| {
-    //       Some(Bound::Exclusive((
-    //         (params.address.to_string(), rel_name, c_id),
-    //         PhantomData,
-    //       )))
-    //     }),
-    //     None,
-    //   ),
-    //   Order::Descending => (
-    //     None,
-    //     params.cursor.and_then(|(rel_name, c_id)| {
-    //       Some(Bound::Exclusive((
-    //         (params.address.to_string(), rel_name, c_id),
-    //         PhantomData,
-    //       )))
-    //     }),
-    //   ),
-    // };
 
     let (min, max) = match order {
         Order::Ascending => (
             if let Some((rel_name, c_id_str)) = params.cursor {
                 Some(Bound::Exclusive((
-                    (params.address.to_string(), rel_name.clone(), c_id_str),
+                    (
+                        params.address.to_string(),
+                        pad(&rel_name, max_str_len),
+                        c_id_str,
+                    ),
                     PhantomData,
                 )))
             } else {
                 Some(Bound::Inclusive((
                     (
                         params.address.to_string(),
-                        "".to_string(),
+                        pad(&params.relationship.unwrap_or_default(), max_str_len),
                         ContractID::MIN.to_string(),
                     ),
                     PhantomData,
@@ -71,14 +60,18 @@ pub fn related_to(
             None,
             if let Some((rel_name, c_id_str)) = params.cursor {
                 Some(Bound::Exclusive((
-                    (params.address.to_string(), rel_name.clone(), c_id_str),
+                    (
+                        params.address.to_string(),
+                        pad(&rel_name, max_str_len),
+                        c_id_str,
+                    ),
                     PhantomData,
                 )))
             } else {
                 Some(Bound::Exclusive((
                     (
                         format!("{}1", params.address),
-                        "".to_string(),
+                        pad(&params.relationship.unwrap_or_default(), max_str_len),
                         ContractID::MIN.to_string(),
                     ),
                     PhantomData,
@@ -97,11 +90,12 @@ pub fn related_to(
     let mut memoized: HashMap<ContractID, RelatedContract> = HashMap::with_capacity(4);
     let target_contract_addr_str = params.address.to_string();
 
-    for result in REL_ADDR_2_CONTRACT_ID
-        .keys(deps.storage, min, max, order)
+    for result in REL_ADDR_2_ID
+        .range(deps.storage, min, max, order)
         .take(limit)
     {
-        let (contract_addr, name, contract_id_str) = result?;
+        let ((contract_addr, name, contract_id_str), uniqueness) = result?;
+        let name = trim_padding(&name);
 
         if contract_addr != target_contract_addr_str {
             break;
@@ -110,7 +104,10 @@ pub fn related_to(
         let related_contract_id = parse::<u64>(contract_id_str.clone())?;
 
         if let Some(contract_rel) = memoized.get_mut(&related_contract_id) {
-            contract_rel.relationships.push(name.clone());
+            contract_rel.relationships.push(RelationshipMetadata {
+                name: name.clone(),
+                unique: uniqueness == UNIQUE,
+            });
         } else {
             contract_ids.push(related_contract_id);
             memoized.insert(
@@ -121,7 +118,10 @@ pub fn related_to(
                         related_contract_id,
                         params.details.clone(),
                     )?,
-                    relationships: vec![name.clone()],
+                    relationships: vec![RelationshipMetadata {
+                        name: name.clone(),
+                        unique: uniqueness == UNIQUE,
+                    }],
                 },
             );
         }

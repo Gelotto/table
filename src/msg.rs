@@ -31,6 +31,7 @@ pub enum AdminMsg {
     RevertConfig(),
     Unsuspend(Addr),
     DeleteIndex(String),
+    SetOwner(Owner),
 }
 
 #[cw_serde]
@@ -84,6 +85,7 @@ pub enum ContractQueryMsg {
     Relationships(ContractRelationshipsQueryParams),
     Groups(ContractGroupsQueryParams),
     Tags(ContractTagsQueryParams),
+    IsRelatedTo(ContractIsRelatedToParams),
 }
 
 #[cw_serde]
@@ -94,12 +96,22 @@ pub enum QueryMsg {
 }
 
 #[cw_serde]
-pub struct MigrateMsg {}
+pub enum MigrateMsg {
+    V0_0_3 {
+        string_indices: Vec<String>,
+        use_lifecycle_hooks: bool,
+    },
+}
 
 #[cw_serde]
 pub struct IndicesResponse {
     pub indices: Vec<IndexMetadata>,
     pub cursor: Option<String>,
+}
+
+#[cw_serde]
+pub struct ContractIsRelatedToResponse {
+    pub is_related: bool,
 }
 
 #[cw_serde]
@@ -181,11 +193,18 @@ pub struct RelationshipAddresses {
 pub struct Relationship {
     pub name: String,
     pub address: Addr,
+    pub unique: bool,
+}
+
+#[cw_serde]
+pub struct RelationshipMetadata {
+    pub name: String,
+    pub unique: bool,
 }
 
 #[cw_serde]
 pub struct RelatedContract {
-    pub relationships: Vec<String>,
+    pub relationships: Vec<RelationshipMetadata>,
     pub contract: ContractRecord,
 }
 
@@ -224,8 +243,15 @@ pub struct CreationParams {
     pub label: Option<String>,
     pub groups: Option<Vec<GroupID>>,
     pub tags: Option<Vec<String>>,
+    pub use_lifecycle_hooks: Option<bool>,
 }
 
+#[cw_serde]
+pub struct ContractIsRelatedToParams {
+    pub contract: Addr,
+    pub address: Addr,
+    pub relationships: Vec<String>,
+}
 #[cw_serde]
 pub struct UpdateParams {
     pub contract: Addr,
@@ -332,12 +358,17 @@ pub struct IndexMetadata {
     pub name: String,
     pub size: Uint64,
 }
+#[cw_serde]
+pub struct TagUpdate {
+    pub text: String,
+    pub unique: Option<bool>,
+}
 
 #[cw_serde]
 #[derive(Default)]
 pub struct TagUpdates {
     pub remove: Option<Vec<String>>,
-    pub add: Option<Vec<String>>,
+    pub add: Option<Vec<TagUpdate>>,
 }
 
 #[cw_serde]
@@ -350,6 +381,8 @@ pub struct RelationshipUpdates {
 pub struct Config {
     pub owner: Owner,
     pub code_id_allowlist_enabled: bool,
+    pub case_sensitive_indices: bool,
+    pub max_str_len: u16,
 }
 
 #[cw_serde]
@@ -494,6 +527,7 @@ pub enum RelationshipSide {
 #[cw_serde]
 pub struct RelationshipQueryParams {
     pub address: Addr,
+    pub relationship: Option<String>,
     pub cursor: Option<(String, String)>,
     pub desc: Option<bool>,
     pub limit: Option<u32>,

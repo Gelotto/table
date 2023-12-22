@@ -1,21 +1,22 @@
 use std::marker::PhantomData;
 
-use cosmwasm_std::{Addr, Order, Response, StdResult, Storage, Uint64};
+use cosmwasm_std::{to_json_binary, Addr, Order, Response, StdResult, Storage, Uint64, WasmMsg};
 use cw_storage_plus::{Bound, Deque};
 
 use crate::{
     context::Context,
     error::ContractError,
+    lifecycle::{LifecycleArgs, LifecycleExecuteMsg, LifecycleExecuteMsgEnvelope},
     models::ContractFlag,
     msg::IndexType,
     state::{
         ensure_allowed_by_acl, ensure_contract_not_suspended, load_contract_id, remove_from_group,
         ContractID, CONTRACT_ADDR_2_ID, CONTRACT_DYN_METADATA, CONTRACT_GROUP_IDS,
         CONTRACT_ID_2_ADDR, CONTRACT_INDEX_TYPES, CONTRACT_METADATA, CONTRACT_SUSPENSIONS,
-        CONTRACT_TAGS, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_TAG,
-        IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, PARTITION_TAG_COUNTS,
-        REL_ADDR_2_CONTRACT_ID, REL_CONTRACT_ID_2_ADDR, VALUES_BINARY, VALUES_BOOL, VALUES_STRING,
-        VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8,
+        CONTRACT_TAGS, CONTRACT_USES_LIFECYCLE_HOOKS, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT,
+        IX_CREATED_BY, IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES,
+        PARTITION_TAG_COUNTS, REL_ADDR_2_ID, REL_ID_2_ADDR, VALUES_BINARY, VALUES_BOOL,
+        VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8,
     },
 };
 
@@ -24,12 +25,13 @@ pub fn on_execute(
     ctx: Context,
     contract_addr: Addr,
 ) -> Result<Response, ContractError> {
-    let Context { deps, info, .. } = ctx;
+    let Context { deps, info, env } = ctx;
     let action = "delete";
 
     deps.api.addr_validate(contract_addr.as_str())?;
 
     let contract_id = load_contract_id(deps.storage, &contract_addr)?;
+    let mut resp = Response::new().add_attribute("action", action);
 
     // If sender isn't the contract itself, only allow sender if auth'd by owner
     // address or ACL.
@@ -39,13 +41,29 @@ pub fn on_execute(
         ensure_contract_not_suspended(deps.storage, contract_id)?;
     };
 
+    if CONTRACT_USES_LIFECYCLE_HOOKS
+        .may_load(deps.storage, contract_id)?
+        .unwrap_or_default()
+    {
+        resp = resp.add_message(WasmMsg::Execute {
+            contract_addr: contract_addr.clone().into(),
+            msg: to_json_binary(&LifecycleExecuteMsgEnvelope::Lifecycle(
+                LifecycleExecuteMsg::Teardown(LifecycleArgs {
+                    table: env.contract.address.clone(),
+                    initiator: info.sender.clone(),
+                }),
+            ))?,
+            funds: vec![],
+        });
+    }
+
     delete_from_indices(deps.storage, contract_id)?;
     delete_from_tags(deps.storage, contract_id)?;
     delete_from_relationships(deps.storage, contract_id)?;
     delete_from_partition(deps.storage, &contract_addr, contract_id)?;
     delete_from_groups(deps.storage, contract_id)?;
 
-    Ok(Response::new().add_attribute("action", action))
+    Ok(resp)
 }
 
 fn delete_from_groups(
@@ -193,7 +211,7 @@ fn delete_from_relationships(
     storage: &mut dyn Storage,
     id: ContractID,
 ) -> Result<(), ContractError> {
-    for result in REL_CONTRACT_ID_2_ADDR
+    for result in REL_ID_2_ADDR
         .keys(
             storage,
             Some(Bound::Inclusive((
@@ -207,11 +225,11 @@ fn delete_from_relationships(
     {
         let (contract_id, rel_name, account_addr) = result?;
 
-        REL_CONTRACT_ID_2_ADDR.remove(
+        REL_ID_2_ADDR.remove(
             storage,
             (contract_id, rel_name.clone(), account_addr.clone()),
         );
-        REL_ADDR_2_CONTRACT_ID.remove(storage, (account_addr, rel_name, id.to_string()));
+        REL_ADDR_2_ID.remove(storage, (account_addr, rel_name, id.to_string()));
     }
 
     Ok(())

@@ -3,7 +3,7 @@ use cosmwasm_std::{to_json_binary, Addr, Binary, StdResult, Uint64, WasmMsg};
 use crate::{
     msg::{
         ClientMsg, CreationParams, ExecuteMsg, FlagParams, KeyValue, PartitionSelector,
-        Relationship, RelationshipUpdates, TagUpdates, UpdateParams,
+        Relationship, RelationshipUpdates, TagUpdate, TagUpdates, UpdateParams,
     },
     state::GroupID,
 };
@@ -29,6 +29,7 @@ impl Table {
         code_id: Uint64,
         instantiate_msg: Binary,
         label: String,
+        use_lifecycle_hooks: bool,
         partition: PartitionSelector,
         admin: Option<Addr>,
         groups: Option<Vec<GroupID>>,
@@ -40,6 +41,7 @@ impl Table {
                 code_id,
                 instantiate_msg,
                 label: Some(label),
+                use_lifecycle_hooks: Some(use_lifecycle_hooks),
                 admin,
                 partition,
                 groups,
@@ -79,11 +81,7 @@ impl Table {
         })
     }
 
-    pub fn tag(
-        &self,
-        initiator: &Addr,
-        tags: Vec<String>,
-    ) -> StdResult<WasmMsg> {
+    pub fn tag(&self, initiator: &Addr, tags: Vec<TagUpdate>) -> StdResult<WasmMsg> {
         self.update(
             initiator,
             None,
@@ -95,11 +93,7 @@ impl Table {
         )
     }
 
-    pub fn untag(
-        &self,
-        initiator: &Addr,
-        tags: Vec<String>,
-    ) -> StdResult<WasmMsg> {
+    pub fn untag(&self, initiator: &Addr, tags: Vec<String>) -> StdResult<WasmMsg> {
         self.update(
             initiator,
             None,
@@ -111,11 +105,7 @@ impl Table {
         )
     }
 
-    pub fn index(
-        &self,
-        initiator: &Addr,
-        values: Vec<KeyValue>,
-    ) -> StdResult<WasmMsg> {
+    pub fn index(&self, initiator: &Addr, values: Vec<KeyValue>) -> StdResult<WasmMsg> {
         self.update(initiator, Some(values), None, None)
     }
 

@@ -1,5 +1,6 @@
 use cosmwasm_std::{
-    attr, Addr, DepsMut, Env, Event, Reply, Response, StdResult, Storage, SubMsg, Uint64, WasmMsg,
+    attr, to_json_binary, Addr, DepsMut, Env, Event, Reply, Response, StdResult, Storage, SubMsg,
+    Uint64, WasmMsg,
 };
 use cw_lib::utils::state::increment;
 
@@ -7,13 +8,15 @@ use crate::{
     context::Context,
     ensure::ensure_authorized_code_id,
     error::ContractError,
+    lifecycle::{LifecycleExecuteMsg, LifecycleExecuteMsgEnvelope, LifecycleSetupArgs},
     models::{ContractMetadata, ReplyJob},
     msg::CreationParams,
     state::{
         append_group, ensure_allowed_by_acl, ensure_contract_not_suspended,
         exists_contract_address, load_contract_id, load_next_contract_id, resolve_partition_id,
-        CONTRACT_METADATA, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV,
-        IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, REPLY_JOBS, REPLY_JOB_ID_COUNTER, X,
+        CONTRACT_METADATA, CONTRACT_USES_LIFECYCLE_HOOKS, IX_CODE_ID, IX_CONTRACT_ID,
+        IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES,
+        REPLY_JOBS, REPLY_JOB_ID_COUNTER, TABLE_INFO, X,
     },
 };
 
@@ -38,9 +41,16 @@ pub fn on_execute(
     let initiator = &info.sender;
     let job_id = create_reply_job(deps.storage, &params, initiator)?;
     let admin: Option<String> = Some(params.admin.unwrap_or(env.contract.address).into());
-    let label = params
-        .label
-        .unwrap_or_else(|| format!("Contract-{}", job_id));
+    // let maybe_table_name = TABLE_INFO.load(deps.storage)?.name;
+    let label = params.label.unwrap_or_else(|| {
+        format!(
+            "Contract {}",
+            // maybe_table_name.unwrap_or_default(),
+            job_id
+        )
+        .trim_start()
+        .to_owned()
+    });
 
     Ok(Response::new()
         .add_attributes(vec![
@@ -107,6 +117,14 @@ pub fn on_reply(
 
                     CONTRACT_METADATA.save(deps.storage, contract_id, &metadata)?;
 
+                    let use_lifecycle_hooks = params.use_lifecycle_hooks.unwrap_or_default();
+
+                    CONTRACT_USES_LIFECYCLE_HOOKS.save(
+                        deps.storage,
+                        contract_id,
+                        &use_lifecycle_hooks,
+                    )?;
+
                     PARTITION_SIZES.update(deps.storage, p, |maybe_n| -> StdResult<_> {
                         Ok(maybe_n.unwrap_or_default() + Uint64::one())
                     })?;
@@ -145,7 +163,21 @@ pub fn on_reply(
                         Event::new("post_create")
                             .add_attribute("contract_address", contract_addr.to_string())
                             .add_attribute("contract_id", contract_id.to_string()),
-                    )
+                    );
+
+                    if use_lifecycle_hooks {
+                        resp = resp.add_message(WasmMsg::Execute {
+                            contract_addr: contract_addr.into(),
+                            msg: to_json_binary(&LifecycleExecuteMsgEnvelope::Lifecycle(
+                                LifecycleExecuteMsg::Setup(LifecycleSetupArgs {
+                                    table: env.contract.address.clone(),
+                                    initiator,
+                                    id: contract_id.to_string(),
+                                }),
+                            ))?,
+                            funds: vec![],
+                        });
+                    }
                 }
             }
         },

@@ -1,10 +1,10 @@
-use cosmwasm_std::{Response, Uint64};
+use cosmwasm_std::Response;
 
 use crate::{
     context::Context,
     error::ContractError,
-    msg::{IndexCreationParams, IndexMetadata},
-    state::{ensure_allowed_by_acl, INDEX_METADATA},
+    msg::IndexCreationParams,
+    state::{create_index, ensure_allowed_by_acl},
 };
 
 pub fn on_execute(
@@ -15,24 +15,7 @@ pub fn on_execute(
     let Context { deps, info, .. } = ctx;
 
     ensure_allowed_by_acl(&deps, &info.sender, "/table/create-index")?;
-
-    INDEX_METADATA.update(
-        deps.storage,
-        params.name.clone(),
-        |maybe_meta| -> Result<_, ContractError> {
-            if maybe_meta.is_some() {
-                Err(ContractError::NotAuthorized {
-                    reason: format!("index {} already exists", params.name),
-                })
-            } else {
-                Ok(IndexMetadata {
-                    size: Uint64::zero(),
-                    index_type: params.index_type,
-                    name: params.name,
-                })
-            }
-        },
-    )?;
+    create_index(deps.storage, params)?;
 
     Ok(Response::new().add_attribute("action", action))
 }

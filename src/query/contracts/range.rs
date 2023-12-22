@@ -6,7 +6,7 @@ use crate::state::{
     load_contract_records, ContractID, CustomIndexMap, PartitionID, IX_CODE_ID, IX_CONTRACT_ID,
     IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY,
 };
-use crate::util::{build_index_storage_key, parse, parse_bool};
+use crate::util::{build_index_storage_key, pad, parse, parse_bool};
 use crate::{error::ContractError, msg::RangeQueryParams};
 use cosmwasm_std::{Api, Binary, Deps, Order, StdResult, Storage, Uint64};
 use cw_storage_plus::{Bound, KeyDeserialize, Map, Prefixer, PrimaryKey};
@@ -40,7 +40,7 @@ pub fn range(
     Ok(ContractsRangeResponse { contracts, cursor })
 }
 
-fn build_range_bounds<'a, T>(
+fn build_bounds<'a, T>(
     order: Order,
     partition: PartitionID,
     range_start_value: T,
@@ -68,7 +68,7 @@ where
                 }),
                 // max
                 Some(Bound::Exclusive((
-                    (partition, range_stop_value, u64::MIN),
+                    (partition, range_stop_value, u64::MAX),
                     PhantomData,
                 ))),
             )
@@ -118,7 +118,7 @@ fn build_range_bounds_str<'a>(
                 },
                 // max
                 if let Some(v) = range_stop_value {
-                    Some(Bound::Exclusive(((partition, v, u64::MIN), PhantomData)))
+                    Some(Bound::Inclusive(((partition, v, u64::MAX), PhantomData)))
                 } else {
                     None
                 },
@@ -128,7 +128,7 @@ fn build_range_bounds_str<'a>(
             (
                 // min
                 if let Some(v) = range_start_value {
-                    Some(Bound::Exclusive(((partition, v, u64::MAX), PhantomData)))
+                    Some(Bound::Exclusive(((partition, v, u64::MIN), PhantomData)))
                 } else {
                     None
                 },
@@ -145,7 +145,7 @@ fn build_range_bounds_str<'a>(
     })
 }
 
-fn build_start_stop_values<T: FromStr + Clone>(
+fn build_start_stop<T: FromStr + Clone>(
     start_value_raw: Option<String>,
     start_value_default: T,
     stop_value_raw: Option<String>,
@@ -176,7 +176,17 @@ fn build_start_stop_values_str(
     start_value_raw: Option<String>,
     stop_value_raw: Option<String>,
     exact: bool,
+    max_str_len: Option<usize>,
 ) -> Result<(Option<String>, Option<String>), ContractError> {
+    let (start_value_raw, stop_value_raw) = if let Some(max_len) = max_str_len {
+        (
+            start_value_raw.and_then(|s| Some(pad(&s, max_len))),
+            stop_value_raw.and_then(|s| Some(pad(&s, max_len))),
+        )
+    } else {
+        (start_value_raw, stop_value_raw)
+    };
+
     if exact {
         return Ok((start_value_raw.clone(), start_value_raw));
     }
@@ -210,7 +220,7 @@ fn build_start_stop_values_binary<'a>(
     Ok((start_value, stop_value))
 }
 
-fn next_page<'a, D>(
+fn page<'a, D>(
     iter: Box<dyn Iterator<Item = StdResult<(PartitionID, D, ContractID)>> + 'a>,
     limit: usize,
     to_string: &dyn Fn(&D) -> String,
@@ -230,7 +240,7 @@ fn next_page<'a, D>(
 
 fn get_contract_ids(
     _api: &dyn Api,
-    storage: &dyn Storage,
+    store: &dyn Storage,
     query: RangeQueryParams,
     raw_start: Option<String>,
     raw_stop: Option<String>,
@@ -249,70 +259,70 @@ fn get_contract_ids(
         RangeSelector::Id => {
             let index = IX_CONTRACT_ID;
             let (start, stop) =
-                build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
-            let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
-            next_page(index.keys(storage, min, max, order), limit, &|x| {
+                build_start_stop(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
+            let (min, max) = build_bounds(order, partition, start, stop, query.cursor)?;
+            page(index.keys(store, min, max, order), limit, &|x| {
                 x.to_string()
             })?
         },
         RangeSelector::CodeId => {
             let index = IX_CODE_ID;
             let (start, stop) =
-                build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
-            let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
-            next_page(index.keys(storage, min, max, order), limit, &|x| {
+                build_start_stop(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
+            let (min, max) = build_bounds(order, partition, start, stop, query.cursor)?;
+            page(index.keys(store, min, max, order), limit, &|x| {
                 x.to_string()
             })?
         },
         RangeSelector::Rev => {
             let index = IX_REV;
             let (start, stop) =
-                build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
-            let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
-            next_page(index.keys(storage, min, max, order), limit, &|x| {
+                build_start_stop(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
+            let (min, max) = build_bounds(order, partition, start, stop, query.cursor)?;
+            page(index.keys(store, min, max, order), limit, &|x| {
                 x.to_string()
             })?
         },
         RangeSelector::CreatedAt => {
             let index = IX_CREATED_AT;
             let (start, stop) =
-                build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
-            let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
-            next_page(index.keys(storage, min, max, order), limit, &|x| {
+                build_start_stop(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
+            let (min, max) = build_bounds(order, partition, start, stop, query.cursor)?;
+            page(index.keys(store, min, max, order), limit, &|x| {
                 x.to_string()
             })?
         },
         RangeSelector::UpdatedAt => {
             let index = IX_UPDATED_AT;
             let (start, stop) =
-                build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
-            let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
-            next_page(index.keys(storage, min, max, order), limit, &|x| {
+                build_start_stop(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
+            let (min, max) = build_bounds(order, partition, start, stop, query.cursor)?;
+            page(index.keys(store, min, max, order), limit, &|x| {
                 x.to_string()
             })?
         },
         RangeSelector::CreatedBy => {
             let index = IX_CREATED_BY;
-            let (start, stop) = build_start_stop_values_str(raw_start, raw_stop, exact)?;
+            let (start, stop) = build_start_stop_values_str(raw_start, raw_stop, exact, None)?;
             let (min, max) = build_range_bounds_str(order, partition, start, stop, query.cursor)?;
-            next_page(index.keys(storage, min, max, order), limit, &|x| {
+            page(index.keys(store, min, max, order), limit, &|x| {
                 x.to_string()
             })?
         },
         RangeSelector::UpdatedBy => {
             let index = IX_UPDATED_BY;
-            let (start, stop) = build_start_stop_values_str(raw_start, raw_stop, exact)?;
+            let (start, stop) = build_start_stop_values_str(raw_start, raw_stop, exact, None)?;
             let (min, max) = build_range_bounds_str(order, partition, start, stop, query.cursor)?;
-            next_page(index.keys(storage, min, max, order), limit, &|x| {
+            page(index.keys(store, min, max, order), limit, &|x| {
                 x.to_string()
             })?
         },
         RangeSelector::String(index_name) => {
             let storage_key = build_index_storage_key(index_name);
             let index: CustomIndexMap<String> = Map::new(&storage_key);
-            let (start, stop) = build_start_stop_values_str(raw_start, raw_stop, exact)?;
+            let (start, stop) = build_start_stop_values_str(raw_start, raw_stop, exact, None)?;
             let (min, max) = build_range_bounds_str(order, partition, start, stop, query.cursor)?;
-            next_page(index.keys(storage, min, max, order), limit, &|x| {
+            page(index.keys(store, min, max, order), limit, &|x| {
                 x.to_string()
             })?
         },
@@ -320,9 +330,9 @@ fn get_contract_ids(
             let storage_key = build_index_storage_key(index_name);
             let index: CustomIndexMap<u8> = Map::new(&storage_key);
             let (start, stop) =
-                build_start_stop_values(raw_start, u8::MIN, raw_stop, u8::MAX, exact, &parse_bool)?;
-            let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
-            next_page(index.keys(storage, min, max, order), limit, &|x| {
+                build_start_stop(raw_start, u8::MIN, raw_stop, u8::MAX, exact, &parse_bool)?;
+            let (min, max) = build_bounds(order, partition, start, stop, query.cursor)?;
+            page(index.keys(store, min, max, order), limit, &|x| {
                 x.to_string()
             })?
         },
@@ -330,9 +340,9 @@ fn get_contract_ids(
             let storage_key = build_index_storage_key(index_name);
             let index: CustomIndexMap<u64> = Map::new(&storage_key);
             let (start, stop) =
-                build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
-            let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
-            next_page(index.keys(storage, min, max, order), limit, &|x| {
+                build_start_stop(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
+            let (min, max) = build_bounds(order, partition, start, stop, query.cursor)?;
+            page(index.keys(store, min, max, order), limit, &|x| {
                 x.to_string()
             })?
         },
@@ -340,9 +350,9 @@ fn get_contract_ids(
             let storage_key = build_index_storage_key(index_name);
             let index: CustomIndexMap<u8> = Map::new(&storage_key);
             let (start, stop) =
-                build_start_stop_values(raw_start, u8::MIN, raw_stop, u8::MAX, exact, &parse)?;
-            let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
-            next_page(index.keys(storage, min, max, order), limit, &|x| {
+                build_start_stop(raw_start, u8::MIN, raw_stop, u8::MAX, exact, &parse)?;
+            let (min, max) = build_bounds(order, partition, start, stop, query.cursor)?;
+            page(index.keys(store, min, max, order), limit, &|x| {
                 x.to_string()
             })?
         },
@@ -350,9 +360,9 @@ fn get_contract_ids(
             let storage_key = build_index_storage_key(index_name);
             let index: CustomIndexMap<u16> = Map::new(&storage_key);
             let (start, stop) =
-                build_start_stop_values(raw_start, u16::MIN, raw_stop, u16::MAX, exact, &parse)?;
-            let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
-            next_page(index.keys(storage, min, max, order), limit, &|x| {
+                build_start_stop(raw_start, u16::MIN, raw_stop, u16::MAX, exact, &parse)?;
+            let (min, max) = build_bounds(order, partition, start, stop, query.cursor)?;
+            page(index.keys(store, min, max, order), limit, &|x| {
                 x.to_string()
             })?
         },
@@ -360,9 +370,9 @@ fn get_contract_ids(
             let storage_key = build_index_storage_key(index_name);
             let index: CustomIndexMap<u32> = Map::new(&storage_key);
             let (start, stop) =
-                build_start_stop_values(raw_start, u32::MIN, raw_stop, u32::MAX, exact, &parse)?;
-            let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
-            next_page(index.keys(storage, min, max, order), limit, &|x| {
+                build_start_stop(raw_start, u32::MIN, raw_stop, u32::MAX, exact, &parse)?;
+            let (min, max) = build_bounds(order, partition, start, stop, query.cursor)?;
+            page(index.keys(store, min, max, order), limit, &|x| {
                 x.to_string()
             })?
         },
@@ -370,9 +380,9 @@ fn get_contract_ids(
             let storage_key = build_index_storage_key(index_name);
             let index: CustomIndexMap<u64> = Map::new(&storage_key);
             let (start, stop) =
-                build_start_stop_values(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
-            let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
-            next_page(index.keys(storage, min, max, order), limit, &|x| {
+                build_start_stop(raw_start, u64::MIN, raw_stop, u64::MAX, exact, &parse)?;
+            let (min, max) = build_bounds(order, partition, start, stop, query.cursor)?;
+            page(index.keys(store, min, max, order), limit, &|x| {
                 x.to_string()
             })?
         },
@@ -380,9 +390,9 @@ fn get_contract_ids(
             let storage_key = build_index_storage_key(index_name);
             let index: CustomIndexMap<u128> = Map::new(&storage_key);
             let (start, stop) =
-                build_start_stop_values(raw_start, u128::MIN, raw_stop, u128::MAX, exact, &parse)?;
-            let (min, max) = build_range_bounds(order, partition, start, stop, query.cursor)?;
-            next_page(index.keys(storage, min, max, order), limit, &|x| {
+                build_start_stop(raw_start, u128::MIN, raw_stop, u128::MAX, exact, &parse)?;
+            let (min, max) = build_bounds(order, partition, start, stop, query.cursor)?;
+            page(index.keys(store, min, max, order), limit, &|x| {
                 x.to_string()
             })?
         },
@@ -420,7 +430,7 @@ fn get_contract_ids(
                         if let Some(v) = stop {
                             stop_vec = v;
                             Some(Bound::Exclusive((
-                                (partition, stop_vec.as_slice(), u64::MIN),
+                                (partition, stop_vec.as_slice(), u64::MAX),
                                 PhantomData,
                             )))
                         } else {
@@ -434,7 +444,7 @@ fn get_contract_ids(
                         if let Some(v) = start {
                             start_vec = v;
                             Some(Bound::Exclusive((
-                                (partition, start_vec.as_slice(), u64::MAX),
+                                (partition, start_vec.as_slice(), u64::MIN),
                                 PhantomData,
                             )))
                         } else {
@@ -459,7 +469,18 @@ fn get_contract_ids(
                     )
                 },
             };
-            next_page(index.keys(storage, min, max, order), limit, &|x| {
+
+            // index.prefix_range(
+            //     storage,
+            //     Some(PrefixBound::Exclusive((
+            //         (partition, "".as_bytes()),
+            //         PhantomData,
+            //     ))),
+            //     None,
+            //     order,
+            // );
+
+            page(index.keys(store, min, max, order), limit, &|x| {
                 Binary::from(x.as_slice()).to_base64()
             })?
         },

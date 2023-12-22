@@ -1,14 +1,15 @@
-use cosmwasm_std::{attr, Response};
+use cosmwasm_std::{attr, to_json_binary, Response, WasmMsg};
 use cw_storage_plus::Deque;
 
 use crate::{
     context::Context,
     error::ContractError,
+    lifecycle::{LifecycleArgs, LifecycleExecuteMsg, LifecycleExecuteMsgEnvelope},
     models::ContractFlag,
     msg::FlagParams,
     state::{
         ensure_allowed_by_acl, ensure_contract_not_suspended, load_contract_id,
-        CONTRACT_SUSPENSIONS,
+        CONTRACT_SUSPENSIONS, CONTRACT_USES_LIFECYCLE_HOOKS,
     },
 };
 
@@ -32,9 +33,25 @@ pub fn on_execute(
 
     let flags_deque_key = format!("_flags_{}", contract_id);
     let flags: Deque<ContractFlag> = Deque::new(flags_deque_key.as_str());
+    let mut resp = Response::new().add_attributes(vec![attr("action", action)]);
 
     if params.suspend.unwrap_or(false) {
         CONTRACT_SUSPENSIONS.save(deps.storage, contract_id, &true)?;
+        if CONTRACT_USES_LIFECYCLE_HOOKS
+            .may_load(deps.storage, contract_id.into())?
+            .unwrap_or_default()
+        {
+            resp = resp.add_message(WasmMsg::Execute {
+                contract_addr: contract_addr.into(),
+                msg: to_json_binary(&LifecycleExecuteMsgEnvelope::Lifecycle(
+                    LifecycleExecuteMsg::Suspend(LifecycleArgs {
+                        table: env.contract.address.clone(),
+                        initiator: info.sender.clone(),
+                    }),
+                ))?,
+                funds: vec![],
+            });
+        }
     }
 
     flags.push_back(
@@ -48,5 +65,5 @@ pub fn on_execute(
         },
     )?;
 
-    Ok(Response::new().add_attributes(vec![attr("action", action)]))
+    Ok(resp)
 }

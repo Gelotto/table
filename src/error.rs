@@ -40,6 +40,9 @@ pub enum ContractError {
 
     #[error("InvalidCursor: {reason:?}")]
     InvalidCursor { reason: String },
+
+    #[error("UnexpectedReplyJobType")]
+    UnexpectedReplyJobType,
 }
 
 impl From<ContractError> for StdError {

@@ -24,3 +24,18 @@ pub fn parse_bool(s: String) -> Result<u8, ContractError> {
 pub fn build_index_storage_key(name: &String) -> String {
     format!("_ix_{}", name)
 }
+
+pub fn pad(
+    input: &str,
+    target_length: usize,
+) -> String {
+    let mut result = String::from(input);
+    while result.len() < target_length {
+        result.push('\0');
+    }
+    result
+}
+
+pub fn trim_padding(input: &String) -> String {
+    input.trim_end_matches('\0').to_string()
+}

@@ -3,12 +3,14 @@ use crate::models::{
     ContractMetadataView, ContractMetadataViewDetails, Details, DynamicContractMetadata, ReplyJob,
 };
 use crate::msg::{
-    Config, ContractRecord, GroupMetadata, IndexMetadata, IndexType, InstantiateMsg,
-    PartitionCreationParams, PartitionMetadata, PartitionSelector, TableInfo,
+    Config, ContractRecord, GroupCreationParams, GroupMetadata, IndexCreationParams, IndexMetadata,
+    IndexType, InstantiateMsg, PartitionCreationParams, PartitionMetadata, PartitionSelector,
+    TableInfo,
 };
 use crate::{error::ContractError, models::ContractMetadata};
 use cosmwasm_std::{
-    to_json_binary, Addr, Binary, DepsMut, Order, Storage, Timestamp, Uint128, Uint64,
+    to_json_binary, Addr, Binary, DepsMut, Env, MessageInfo, Order, Storage, Timestamp, Uint128,
+    Uint64,
 };
 use cw_acl::client::Acl;
 use cw_lib::models::Owner;
@@ -30,6 +32,8 @@ pub const X: u8 = 1;
 pub const CONFIG_OWNER: Item<Owner> = Item::new("owner");
 pub const CONFIG_CODE_ID_ALLOWLIST_ENABLED: Item<bool> = Item::new("code_id_allowlist_enabled");
 pub const CONFIG_BACKUP: Item<Binary> = Item::new("config_backup");
+pub const CONFIG_STR_MAX_LEN: Item<u16> = Item::new("config_indexed_str_max_len");
+pub const CONFIG_STR_CASE_SENSITIVE: Item<bool> = Item::new("config_indexed_str_case_sensitive");
 
 // Top-level metadata describing what this cw-table is and contains.
 pub const TABLE_INFO: Item<TableInfo> = Item::new("table_info");
@@ -56,6 +60,9 @@ pub const CONTRACT_GROUP_IDS: IndexMap<(ContractID, GroupID)> = Map::new("contra
 
 // Lookup table for finding all tags associated with a contract ID
 pub const CONTRACT_TAGS: IndexMap<(ContractID, String)> = Map::new("contract_tags");
+
+// Flag indicating that a given contract uses implements the lifecycle interface
+pub const CONTRACT_USES_LIFECYCLE_HOOKS: Map<u64, bool> = Map::new("lifecycle_hooks_toggles");
 
 // Jobs for processing in the cw reply entrypoint
 pub const REPLY_JOBS: Map<u64, ReplyJob> = Map::new("reply_jobs");
@@ -115,10 +122,13 @@ pub const VALUES_BINARY: Map<(ContractID, &String), Binary> = Map::new("values_b
 
 /// Relationships define an arbitrary M-N named relationship between a contract
 /// ID and an arbitrary Addr, like (contract_id, "winner", user_addr)
-pub const REL_ADDR_2_CONTRACT_ID: Map<(String, String, String), u8> =
-    Map::new("rel_addr_2_contract_id");
-pub const REL_CONTRACT_ID_2_ADDR: Map<(ContractID, String, String), u8> =
-    Map::new("rel_contract_id_2_addr");
+
+pub const UNIQUE: u8 = 1;
+pub const NOT_UNIQUE: u8 = 2;
+
+pub const REL_ADDR_2_ID: Map<(String, String, String), u8> = Map::new("rel_addr_2_contract_id");
+
+pub const REL_ID_2_ADDR: Map<(ContractID, String, String), u8> = Map::new("rel_contract_id_2_addr");
 
 // Group state:
 pub const GROUP_METADATA: Map<GroupID, GroupMetadata> = Map::new("group_metadata");
@@ -130,11 +140,16 @@ pub fn initialize(
     ctx: Context,
     msg: InstantiateMsg,
 ) -> Result<(), ContractError> {
-    let Context { deps, env, .. } = ctx;
+    let Context { deps, env, info } = ctx;
+
     deps.api
         .addr_validate(msg.config.owner.to_addr().as_str())?;
+
     CONFIG_OWNER.save(deps.storage, &msg.config.owner)?;
     CONFIG_CODE_ID_ALLOWLIST_ENABLED.save(deps.storage, &msg.config.code_id_allowlist_enabled)?;
+    CONFIG_STR_MAX_LEN.save(deps.storage, &msg.config.max_str_len)?;
+    CONFIG_STR_CASE_SENSITIVE.save(deps.storage, &msg.config.case_sensitive_indices)?;
+
     CONTRACT_ID_COUNTER.save(deps.storage, &Uint64::zero())?;
     REPLY_JOB_ID_COUNTER.save(deps.storage, &Uint64::zero())?;
     GROUP_ID_COUNTER.save(deps.storage, &0)?;
@@ -143,14 +158,77 @@ pub fn initialize(
 
     for params in msg.partitions.unwrap_or_else(|| {
         vec![PartitionCreationParams {
-            name: Some("Unnamed Partition 1".to_owned()),
+            name: Some("Partition 1".to_owned()),
             description: None,
         }]
     }) {
         create_partition(deps.storage, env.block.time, &params)?;
     }
 
+    for params in msg.indices.unwrap_or_default() {
+        create_index(deps.storage, params)?;
+    }
+
+    for params in msg.groups.unwrap_or_default() {
+        create_group(deps.storage, params, &info, &env)?;
+    }
+
     Ok(())
+}
+
+pub fn create_group(
+    storage: &mut dyn Storage,
+    params: GroupCreationParams,
+    info: &MessageInfo,
+    env: &Env,
+) -> Result<GroupMetadata, ContractError> {
+    let group_id = increment_next_group_id(storage)?;
+    let name = params.name.unwrap_or_else(|| group_id.to_string());
+    let metadata = GroupMetadata {
+        name: name.clone(),
+        description: params.description,
+        created_by: info.sender.clone(),
+        created_at: env.block.time,
+        size: Uint64::zero(),
+    };
+
+    GROUP_METADATA.save(storage, group_id, &metadata)?;
+    GROUP_IX_NAME.save(storage, (name.clone(), group_id), &X)?;
+    GROUP_IX_CREATED_AT.save(storage, (env.block.time.nanos(), group_id), &X)?;
+
+    Ok(metadata)
+}
+
+fn increment_next_group_id(storage: &mut dyn Storage) -> Result<GroupID, ContractError> {
+    GROUP_ID_COUNTER.update(storage, |n| -> Result<_, ContractError> {
+        n.checked_add(1)
+            .ok_or_else(|| ContractError::UnexpectedError {
+                reason: "unexpected overflow incrementing group ID counter".to_owned(),
+            })
+    })
+}
+
+pub fn create_index(
+    storage: &mut dyn Storage,
+    params: IndexCreationParams,
+) -> Result<IndexMetadata, ContractError> {
+    INDEX_METADATA.update(
+        storage,
+        params.name.clone(),
+        |maybe_meta| -> Result<_, ContractError> {
+            if maybe_meta.is_some() {
+                Err(ContractError::NotAuthorized {
+                    reason: format!("index {} already exists", params.name),
+                })
+            } else {
+                Ok(IndexMetadata {
+                    size: Uint64::zero(),
+                    index_type: params.index_type,
+                    name: params.name,
+                })
+            }
+        },
+    )
 }
 
 pub fn build_contract_metadata_view(
@@ -267,6 +345,8 @@ pub fn load_config(storage: &dyn Storage) -> Result<Config, ContractError> {
     Ok(Config {
         owner: CONFIG_OWNER.load(storage)?,
         code_id_allowlist_enabled: CONFIG_CODE_ID_ALLOWLIST_ENABLED.load(storage)?,
+        max_str_len: CONFIG_STR_MAX_LEN.load(storage)?,
+        case_sensitive_indices: CONFIG_STR_CASE_SENSITIVE.load(storage)?,
     })
 }
 
@@ -338,12 +418,12 @@ pub fn create_relationship(
     addr: &Addr,
     name: &String,
 ) -> Result<(), ContractError> {
-    REL_ADDR_2_CONTRACT_ID.save(
+    REL_ADDR_2_ID.save(
         storage,
         (addr.into(), name.clone(), contract_id.to_string()),
         &X,
     )?;
-    REL_CONTRACT_ID_2_ADDR.save(storage, (contract_id, name.clone(), addr.to_string()), &X)?;
+    REL_ID_2_ADDR.save(storage, (contract_id, name.clone(), addr.to_string()), &X)?;
     Ok(())
 }
 
@@ -351,31 +431,38 @@ pub fn delete_relationship(
     storage: &mut dyn Storage,
     contract_id: ContractID,
     addr: &Addr,
-    name: &String,
+    cannonical_name: &String,
 ) -> Result<(), ContractError> {
-    REL_ADDR_2_CONTRACT_ID.remove(
+    REL_ADDR_2_ID.remove(
         storage,
-        (addr.into(), name.clone(), contract_id.to_string()),
+        (
+            addr.into(),
+            cannonical_name.clone(),
+            contract_id.to_string(),
+        ),
     );
-    REL_CONTRACT_ID_2_ADDR.remove(storage, (contract_id, name.clone(), addr.to_string()));
+    REL_ID_2_ADDR.remove(
+        storage,
+        (contract_id, cannonical_name.clone(), addr.to_string()),
+    );
     Ok(())
 }
 
 pub fn increment_tag_count(
     storage: &mut dyn Storage,
     partition: PartitionID,
-    tag: &String,
+    cannonical_tag: &String,
 ) -> Result<u32, ContractError> {
     PARTITION_TAG_COUNTS.update(
         storage,
-        (partition, &tag),
+        (partition, &cannonical_tag),
         |n| -> Result<_, ContractError> {
             n.unwrap_or_default()
                 .checked_add(1)
                 .ok_or_else(|| ContractError::UnexpectedError {
                     reason: format!(
                         "Overflow incrementing count for tag '{}' in partition {}",
-                        tag, partition
+                        cannonical_tag, partition
                     ),
                 })
         },
@@ -385,18 +472,18 @@ pub fn increment_tag_count(
 pub fn decrement_tag_count(
     storage: &mut dyn Storage,
     partition: PartitionID,
-    tag: &String,
+    cannonical_tag: &String,
 ) -> Result<u32, ContractError> {
     PARTITION_TAG_COUNTS.update(
         storage,
-        (partition, &tag),
+        (partition, &cannonical_tag),
         |n| -> Result<_, ContractError> {
             n.unwrap_or_default()
                 .checked_sub(1)
                 .ok_or_else(|| ContractError::UnexpectedError {
                     reason: format!(
                         "error subtracting tag count of 0 for tag '{}' in partition {}",
-                        tag, partition
+                        cannonical_tag, partition
                     ),
                 })
         },
