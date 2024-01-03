@@ -11,7 +11,8 @@ use crate::{
         ContractID, CustomIndexMap, PartitionID, CONTRACT_DYN_METADATA, CONTRACT_INDEX_TYPES,
         CONTRACT_METADATA, CONTRACT_TAGS, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY,
         IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES, VALUES_BINARY, VALUES_BOOL,
-        VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8, X,
+        VALUES_I32, VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64,
+        VALUES_U8, X,
     },
     util::build_index_storage_key,
 };
@@ -190,6 +191,12 @@ pub fn move_custom_indices(
                 let value = VALUES_TIME.load(storage, (contract_id, &index_storage_key))?;
                 index.remove(storage, (src, value.nanos(), contract_id));
                 index.save(storage, (dst, value.nanos(), contract_id), &X)?;
+            },
+            IndexType::Int32 => {
+                let index: CustomIndexMap<i32> = Map::new(&index_storage_key);
+                let value = VALUES_I32.load(storage, (contract_id, &index_storage_key))?;
+                index.remove(storage, (src, value.into(), contract_id));
+                index.save(storage, (dst, value.into(), contract_id), &X)?;
             },
             IndexType::Uint8 => {
                 let index: CustomIndexMap<u8> = Map::new(&index_storage_key);

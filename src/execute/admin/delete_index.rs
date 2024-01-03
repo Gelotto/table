@@ -35,6 +35,10 @@ pub fn on_execute(
                 let map: Map<(PartitionID, u64, ContractID), u8> = Map::new(map_name);
                 map.clear(deps.storage);
             },
+            IndexType::Int32 => {
+                let map: Map<(PartitionID, i32, ContractID), u8> = Map::new(map_name);
+                map.clear(deps.storage);
+            },
             IndexType::Uint8 => {
                 let map: Map<(PartitionID, u8, ContractID), u8> = Map::new(map_name);
                 map.clear(deps.storage);
