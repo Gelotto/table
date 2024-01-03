@@ -113,6 +113,7 @@ pub const IX_GROUP: IndexMap<(GroupID, ContractID)> = Map::new("ix_group");
 pub const VALUES_STRING: Map<(ContractID, &String), String> = Map::new("values_string");
 pub const VALUES_BOOL: Map<(ContractID, &String), bool> = Map::new("values_bool");
 pub const VALUES_TIME: Map<(ContractID, &String), Timestamp> = Map::new("values_time");
+pub const VALUES_I32: Map<(ContractID, &String), i32> = Map::new("values_i32");
 pub const VALUES_U8: Map<(ContractID, &String), u8> = Map::new("values_u8");
 pub const VALUES_U16: Map<(ContractID, &String), u16> = Map::new("values_u16");
 pub const VALUES_U32: Map<(ContractID, &String), u32> = Map::new("values_u32");
@@ -127,7 +128,6 @@ pub const UNIQUE: u8 = 1;
 pub const NOT_UNIQUE: u8 = 2;
 
 pub const REL_ADDR_2_ID: Map<(String, String, String), u8> = Map::new("rel_addr_2_contract_id");
-
 pub const REL_ID_2_ADDR: Map<(ContractID, String, String), u8> = Map::new("rel_contract_id_2_addr");
 
 // Group state:

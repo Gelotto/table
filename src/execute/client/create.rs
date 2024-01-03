@@ -16,7 +16,7 @@ use crate::{
         exists_contract_address, load_contract_id, load_next_contract_id, resolve_partition_id,
         CONTRACT_METADATA, CONTRACT_USES_LIFECYCLE_HOOKS, IX_CODE_ID, IX_CONTRACT_ID,
         IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES,
-        REPLY_JOBS, REPLY_JOB_ID_COUNTER, TABLE_INFO, X,
+        REPLY_JOBS, REPLY_JOB_ID_COUNTER, X,
     },
 };
 

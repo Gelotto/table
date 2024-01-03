@@ -346,6 +346,16 @@ fn get_contract_ids(
                 x.to_string()
             })?
         },
+        RangeSelector::Int32(index_name) => {
+            let storage_key = build_index_storage_key(index_name);
+            let index: CustomIndexMap<i32> = Map::new(&storage_key);
+            let (start, stop) =
+                build_start_stop(raw_start, i32::MIN, raw_stop, i32::MAX, exact, &parse)?;
+            let (min, max) = build_bounds(order, partition, start, stop, query.cursor)?;
+            page(index.keys(store, min, max, order), limit, &|x| {
+                x.to_string()
+            })?
+        },
         RangeSelector::Uint8(index_name) => {
             let storage_key = build_index_storage_key(index_name);
             let index: CustomIndexMap<u8> = Map::new(&storage_key);

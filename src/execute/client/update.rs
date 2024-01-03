@@ -9,8 +9,8 @@ use crate::{
         CONFIG_STR_CASE_SENSITIVE, CONFIG_STR_MAX_LEN, CONTRACT_DYN_METADATA, CONTRACT_INDEX_TYPES,
         CONTRACT_METADATA, CONTRACT_TAGS, INDEX_METADATA, IX_REV, IX_TAG, IX_UPDATED_AT,
         IX_UPDATED_BY, NOT_UNIQUE, REL_ADDR_2_ID, REL_ID_2_ADDR, UNIQUE, VALUES_BINARY,
-        VALUES_BOOL, VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64,
-        VALUES_U8, X,
+        VALUES_BOOL, VALUES_I32, VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32,
+        VALUES_U64, VALUES_U8, X,
     },
     util::{build_index_storage_key, pad, trim_padding},
 };
@@ -153,8 +153,20 @@ fn update_tags(
                     NOT_UNIQUE
                 },
             )?;
-            CONTRACT_TAGS.save(storage, (contract_id, tag_string.clone()), &X)?;
-            increment_tag_count(storage, partition, &tag_string)?;
+            let mut do_increment_tag_count = false;
+            CONTRACT_TAGS.update(
+                storage,
+                (contract_id, tag_string.clone()),
+                |dummy| -> Result<_, ContractError> {
+                    if dummy.is_none() {
+                        do_increment_tag_count = true;
+                    }
+                    Ok(X)
+                },
+            )?;
+            if do_increment_tag_count {
+                increment_tag_count(storage, partition, &tag_string)?;
+            }
         }
     }
 
@@ -292,6 +304,9 @@ fn update_indices(
             },
             KeyValue::Timestamp(key, value) => {
                 update_timestamp_index(storage, partition, contract_id, key, value)?
+            },
+            KeyValue::Int32(key, value) => {
+                update_i32_index(storage, partition, contract_id, key, value)?
             },
             KeyValue::Uint8(key, value) => {
                 update_u8_index(storage, partition, contract_id, key, value)?
@@ -589,6 +604,52 @@ fn update_u16_index(
         index.save(storage, (partition, *new_val, contract_id), &X)?;
         if !CONTRACT_INDEX_TYPES.has(storage, (contract_id, &index_name)) {
             CONTRACT_INDEX_TYPES.save(storage, (contract_id, &index_name), &IndexType::Uint16)?;
+        }
+        increment_index_size(storage, &index_name, true)?;
+    } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &index_name))? {
+        let index_key = (partition, old_val, contract_id);
+        if index.has(storage, index_key) {
+            index.remove(storage, index_key);
+            indexed_value_map.remove(storage, (contract_id, index_name));
+            CONTRACT_INDEX_TYPES.remove(storage, (contract_id, &index_name));
+            increment_index_size(storage, &index_name, false)?;
+        }
+    }
+    Ok(())
+}
+
+fn update_i32_index(
+    storage: &mut dyn Storage,
+    partition: PartitionID,
+    contract_id: ContractID,
+    index_name: &String,
+    maybe_value: &Option<i32>,
+) -> Result<(), ContractError> {
+    let index_slot = build_index_storage_key(index_name);
+    let index: CustomIndexMap<i32> = Map::new(&index_slot);
+    let indexed_value_map = VALUES_I32;
+    let mut maybe_old_bool: Option<i32> = None;
+
+    if let Some(new_val) = maybe_value {
+        let index_key = (partition, *new_val, contract_id);
+        if index.has(storage, index_key) {
+            return Ok(());
+        }
+
+        indexed_value_map.update(
+            storage,
+            (contract_id, &index_name.to_owned()),
+            |x| -> Result<_, ContractError> {
+                maybe_old_bool = x;
+                Ok(*new_val)
+            },
+        )?;
+        if let Some(old_val) = maybe_old_bool {
+            index.remove(storage, (partition, old_val, contract_id));
+        }
+        index.save(storage, (partition, *new_val, contract_id), &X)?;
+        if !CONTRACT_INDEX_TYPES.has(storage, (contract_id, &index_name)) {
+            CONTRACT_INDEX_TYPES.save(storage, (contract_id, &index_name), &IndexType::Int32)?;
         }
         increment_index_size(storage, &index_name, true)?;
     } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &index_name))? {

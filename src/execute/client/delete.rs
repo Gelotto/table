@@ -15,7 +15,7 @@ use crate::{
         CONTRACT_ID_2_ADDR, CONTRACT_INDEX_TYPES, CONTRACT_METADATA, CONTRACT_SUSPENSIONS,
         CONTRACT_TAGS, CONTRACT_USES_LIFECYCLE_HOOKS, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT,
         IX_CREATED_BY, IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES,
-        PARTITION_TAG_COUNTS, REL_ADDR_2_ID, REL_ID_2_ADDR, VALUES_BINARY, VALUES_BOOL,
+        PARTITION_TAG_COUNTS, REL_ADDR_2_ID, REL_ID_2_ADDR, VALUES_BINARY, VALUES_BOOL, VALUES_I32,
         VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8,
     },
 };
@@ -195,6 +195,7 @@ fn delete_from_indices(
             IndexType::String => VALUES_STRING.remove(storage, (id, &index_name)),
             IndexType::Bool => VALUES_BOOL.remove(storage, (id, &index_name)),
             IndexType::Timestamp => VALUES_TIME.remove(storage, (id, &index_name)),
+            IndexType::Int32 => VALUES_I32.remove(storage, (id, &index_name)),
             IndexType::Uint8 => VALUES_U8.remove(storage, (id, &index_name)),
             IndexType::Uint16 => VALUES_U16.remove(storage, (id, &index_name)),
             IndexType::Uint32 => VALUES_U32.remove(storage, (id, &index_name)),
