@@ -81,7 +81,11 @@ impl Table {
         })
     }
 
-    pub fn tag(&self, initiator: &Addr, tags: Vec<TagUpdate>) -> StdResult<WasmMsg> {
+    pub fn tag(
+        &self,
+        initiator: &Addr,
+        tags: Vec<TagUpdate>,
+    ) -> StdResult<WasmMsg> {
         self.update(
             initiator,
             None,
@@ -93,7 +97,11 @@ impl Table {
         )
     }
 
-    pub fn untag(&self, initiator: &Addr, tags: Vec<String>) -> StdResult<WasmMsg> {
+    pub fn untag(
+        &self,
+        initiator: &Addr,
+        tags: Vec<String>,
+    ) -> StdResult<WasmMsg> {
         self.update(
             initiator,
             None,
@@ -105,7 +113,11 @@ impl Table {
         )
     }
 
-    pub fn index(&self, initiator: &Addr, values: Vec<KeyValue>) -> StdResult<WasmMsg> {
+    pub fn index(
+        &self,
+        initiator: &Addr,
+        values: Vec<KeyValue>,
+    ) -> StdResult<WasmMsg> {
         self.update(initiator, Some(values), None, None)
     }
 

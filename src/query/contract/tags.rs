@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use crate::error::ContractError;
 use crate::msg::{ContractTagsQueryParams, ContractTagsResponse};
 use crate::state::{load_contract_id, CONTRACT_TAGS};
+use crate::util::trim_padding;
 use cosmwasm_std::{Deps, Order};
 use cw_storage_plus::Bound;
 
@@ -42,7 +43,7 @@ pub fn query_tags(
         .take(limit)
     {
         let tag = maybe_tag?;
-        tags.push(tag)
+        tags.push(trim_padding(&tag));
     }
 
     if tags.len() == limit {

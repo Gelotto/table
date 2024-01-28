@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 
 use crate::error::ContractError;
 use crate::msg::{
-    ReadRelationshipResponse, RelatedContract, RelationshipMetadata, RelationshipQueryParams,
+    Range, ReadRelationshipResponse, RelatedContract, RelationshipMetadata, RelationshipQueryParams,
 };
 use crate::state::{
     load_one_contract_record, ContractID, CONFIG_STR_MAX_LEN, REL_ADDR_2_ID, UNIQUE,
@@ -33,6 +33,20 @@ pub fn related_to(
         Order::Ascending
     };
 
+    let (start_name, stop_name) = if params.cursor.is_some() {
+        (String::default(), String::default())
+    } else {
+        match params.name {
+            Some(target) => match target {
+                crate::msg::Target::Equals(name) => (name, String::new()),
+                crate::msg::Target::Between(Range { start, stop }) => {
+                    (start.unwrap_or_default(), stop.unwrap_or_default())
+                },
+            },
+            None => (String::default(), String::default()),
+        }
+    };
+
     let (min, max) = match order {
         Order::Ascending => (
             if let Some((rel_name, c_id_str)) = params.cursor {
@@ -48,16 +62,38 @@ pub fn related_to(
                 Some(Bound::Inclusive((
                     (
                         params.address.to_string(),
-                        pad(&params.relationship.unwrap_or_default(), max_str_len),
+                        pad(&start_name, max_str_len),
                         ContractID::MIN.to_string(),
                     ),
                     PhantomData,
                 )))
             },
-            None,
+            if stop_name.is_empty() {
+                None
+            } else {
+                Some(Bound::Inclusive((
+                    (
+                        params.address.to_string(),
+                        pad(&stop_name, max_str_len),
+                        ContractID::MAX.to_string(), // TODO: do not convert contract ID to string since it messes up ordering
+                    ),
+                    PhantomData,
+                )))
+            },
         ),
         Order::Descending => (
-            None,
+            if stop_name.is_empty() {
+                None
+            } else {
+                Some(Bound::Inclusive((
+                    (
+                        params.address.to_string(),
+                        pad(&stop_name, max_str_len),
+                        ContractID::MAX.to_string(), // TODO: do not convert contract ID to string since it messes up ordering
+                    ),
+                    PhantomData,
+                )))
+            },
             if let Some((rel_name, c_id_str)) = params.cursor {
                 Some(Bound::Exclusive((
                     (
@@ -71,7 +107,7 @@ pub fn related_to(
                 Some(Bound::Exclusive((
                     (
                         format!("{}1", params.address),
-                        pad(&params.relationship.unwrap_or_default(), max_str_len),
+                        pad(&start_name, max_str_len),
                         ContractID::MIN.to_string(),
                     ),
                     PhantomData,
@@ -97,7 +133,10 @@ pub fn related_to(
         let ((contract_addr, name, contract_id_str), uniqueness) = result?;
         let name = trim_padding(&name);
 
-        if contract_addr != target_contract_addr_str {
+        if (stop_name.is_empty() && !start_name.is_empty() && name != start_name)
+            || (!stop_name.is_empty() && name > stop_name)
+            || (contract_addr != target_contract_addr_str)
+        {
             break;
         }
 

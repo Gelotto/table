@@ -30,6 +30,8 @@ pub fn on_execute(
 
     let dst_partition = resolve_partition_id(deps.storage, dst_selector)?;
 
+    // TODO: make this a client contract method
+
     ensure_allowed_by_acl(&deps, &info.sender, "/table/set-partition")?;
     ensure_partition_exists(deps.storage, dst_partition)?;
 

@@ -5,12 +5,11 @@ use crate::{
     msg::{IndexType, KeyValue, Relationship, RelationshipUpdates, TagUpdates, UpdateParams},
     state::{
         decrement_tag_count, ensure_allowed_by_acl, ensure_contract_not_suspended,
-        increment_tag_count, load_contract_id, ContractID, CustomIndexMap, PartitionID,
-        CONFIG_STR_CASE_SENSITIVE, CONFIG_STR_MAX_LEN, CONTRACT_DYN_METADATA, CONTRACT_INDEX_TYPES,
-        CONTRACT_METADATA, CONTRACT_TAGS, INDEX_METADATA, IX_REV, IX_TAG, IX_UPDATED_AT,
-        IX_UPDATED_BY, NOT_UNIQUE, REL_ADDR_2_ID, REL_ID_2_ADDR, UNIQUE, VALUES_BINARY,
-        VALUES_BOOL, VALUES_I32, VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32,
-        VALUES_U64, VALUES_U8, X,
+        incr_decr_index_size, increment_tag_count, load_contract_id, ContractID, CustomIndexMap,
+        PartitionID, CONFIG_STR_MAX_LEN, CONTRACT_DYN_METADATA, CONTRACT_INDEX_TYPES,
+        CONTRACT_METADATA, CONTRACT_TAGS, IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, NOT_UNIQUE,
+        REL_ADDR_2_ID, REL_ID_2_ADDR, UNIQUE, VALUES_BINARY, VALUES_BOOL, VALUES_I32,
+        VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8, X,
     },
     util::{build_index_storage_key, pad, trim_padding},
 };
@@ -133,7 +132,7 @@ fn update_tags(
 ) -> Result<(), ContractError> {
     if let Some(tags_to_remove) = &updates.remove {
         for tag_string in tags_to_remove.iter() {
-            let tag_string = &pad(&tag_string.to_lowercase(), max_str_len);
+            let tag_string = &pad(&tag_string, max_str_len);
             IX_TAG.remove(storage, (partition, tag_string, contract_id));
             CONTRACT_TAGS.remove(storage, (contract_id, tag_string.clone()));
             decrement_tag_count(storage, partition, tag_string)?;
@@ -142,7 +141,7 @@ fn update_tags(
 
     if let Some(tags_to_add) = &updates.add {
         for tag in tags_to_add.iter() {
-            let tag_string = &pad(&tag.text.to_lowercase(), max_str_len);
+            let tag_string = &pad(&tag.text, max_str_len);
             ensure_uniqueness(storage, partition, &tag_string)?;
             IX_TAG.save(
                 storage,
@@ -223,7 +222,7 @@ fn set_relationship(
     max_str_len: usize,
 ) -> Result<(), ContractError> {
     let addr_str = rel.address.to_string();
-    let rel_name = pad(&rel.name.to_lowercase(), max_str_len);
+    let rel_name = pad(&rel.name, max_str_len);
     let uniqueness_u8 = if rel.unique { UNIQUE } else { NOT_UNIQUE };
 
     // Check if a relationship with the given name already exists for the given
@@ -262,7 +261,7 @@ fn remove_relationship(
     max_str_len: usize,
 ) -> Result<(), ContractError> {
     let addr_str = rel.address.to_string();
-    let rel_name = pad(&rel.name.to_lowercase(), max_str_len);
+    let rel_name = pad(&rel.name, max_str_len);
     if let Some(related_addr) =
         REL_ID_2_ADDR.may_load(storage, (contract_id, rel_name.clone(), addr_str.clone()))?
     {
@@ -287,18 +286,11 @@ fn update_indices(
 ) -> Result<(), ContractError> {
     // Update each index for the given KeyValue. If the given value is None, use
     // this as a signal to remove the existing entry, if any, from the index.
-    let is_case_sensitive = CONFIG_STR_CASE_SENSITIVE.load(storage)?;
     for value in index_updates.iter() {
         match value {
-            KeyValue::String(key, value) => update_string_index(
-                storage,
-                partition,
-                contract_id,
-                key,
-                value,
-                max_str_len,
-                is_case_sensitive,
-            )?,
+            KeyValue::String(key, value) => {
+                update_string_index(storage, partition, contract_id, key, value, max_str_len)?
+            },
             KeyValue::Bool(key, value) => {
                 update_bool_index(storage, partition, contract_id, key, value)?
             },
@@ -331,40 +323,6 @@ fn update_indices(
     Ok(())
 }
 
-fn increment_index_size(
-    storage: &mut dyn Storage,
-    index_name: &String,
-    is_positive: bool,
-) -> Result<(), ContractError> {
-    INDEX_METADATA.update(
-        storage,
-        index_name.clone(),
-        |maybe_meta| -> Result<_, ContractError> {
-            if let Some(mut meta) = maybe_meta {
-                if is_positive {
-                    meta.size = meta.size.checked_add(Uint64::one()).map_err(|_| {
-                        ContractError::UnexpectedError {
-                            reason: format!("Overflow incrementing index {} size", index_name),
-                        }
-                    })?;
-                } else {
-                    meta.size = meta.size.checked_sub(Uint64::one()).map_err(|_| {
-                        ContractError::UnexpectedError {
-                            reason: format!("Overflow subtracting index {} size", index_name),
-                        }
-                    })?;
-                }
-                Ok(meta)
-            } else {
-                Err(ContractError::UnexpectedError {
-                    reason: format!("Index {} not found", index_name),
-                })
-            }
-        },
-    )?;
-    Ok(())
-}
-
 fn update_string_index(
     storage: &mut dyn Storage,
     partition: PartitionID,
@@ -372,19 +330,13 @@ fn update_string_index(
     index_name: &String,
     maybe_value: &Option<String>,
     max_str_len: usize,
-    is_case_sensitive: bool,
 ) -> Result<(), ContractError> {
     let index_storage_key = build_index_storage_key(index_name);
     let index: CustomIndexMap<&String> = Map::new(&index_storage_key);
     let indexed_value_map = VALUES_STRING;
 
     if let Some(new_val) = maybe_value {
-        let case_adjusted_new_val = if is_case_sensitive {
-            new_val.clone()
-        } else {
-            new_val.to_lowercase()
-        };
-        let new_val = &pad(&case_adjusted_new_val, max_str_len);
+        let new_val = &pad(&new_val, max_str_len);
         let index_key = (partition, new_val, contract_id);
         if index.has(storage, index_key) {
             return Ok(());
@@ -408,14 +360,14 @@ fn update_string_index(
         if !CONTRACT_INDEX_TYPES.has(storage, (contract_id, index_name)) {
             CONTRACT_INDEX_TYPES.save(storage, (contract_id, index_name), &IndexType::String)?;
         }
-        increment_index_size(storage, index_name, true)?;
+        incr_decr_index_size(storage, index_name, true)?;
     } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, index_name))? {
         let index_key = (partition, &old_val, contract_id);
         if index.has(storage, index_key) {
             index.remove(storage, index_key);
             indexed_value_map.remove(storage, (contract_id, index_name));
             CONTRACT_INDEX_TYPES.remove(storage, (contract_id, index_name));
-            increment_index_size(storage, index_name, false)?;
+            incr_decr_index_size(storage, index_name, false)?;
         }
     }
     Ok(())
@@ -459,14 +411,14 @@ fn update_bool_index(
         if !CONTRACT_INDEX_TYPES.has(storage, (contract_id, &index_name)) {
             CONTRACT_INDEX_TYPES.save(storage, (contract_id, &index_name), &IndexType::Bool)?;
         }
-        increment_index_size(storage, &index_name, true)?;
+        incr_decr_index_size(storage, &index_name, true)?;
     } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &index_name))? {
         let index_key = (partition, if old_val { 1u8 } else { 0u8 }, contract_id);
         if index.has(storage, index_key) {
             index.remove(storage, index_key);
             indexed_value_map.remove(storage, (contract_id, index_name));
             CONTRACT_INDEX_TYPES.remove(storage, (contract_id, &index_name));
-            increment_index_size(storage, &index_name, false)?;
+            incr_decr_index_size(storage, &index_name, false)?;
         }
     }
     Ok(())
@@ -511,14 +463,14 @@ fn update_timestamp_index(
                 &IndexType::Timestamp,
             )?;
         }
-        increment_index_size(storage, &index_name, true)?;
+        incr_decr_index_size(storage, &index_name, true)?;
     } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &index_name))? {
         let index_key = (partition, old_val.nanos(), contract_id);
         if index.has(storage, index_key) {
             index.remove(storage, (partition, old_val.nanos(), contract_id));
             indexed_value_map.remove(storage, (contract_id, index_name));
             CONTRACT_INDEX_TYPES.remove(storage, (contract_id, &index_name));
-            increment_index_size(storage, &index_name, false)?;
+            incr_decr_index_size(storage, &index_name, false)?;
         }
     }
     Ok(())
@@ -557,14 +509,14 @@ fn update_u8_index(
         if !CONTRACT_INDEX_TYPES.has(storage, (contract_id, &index_name)) {
             CONTRACT_INDEX_TYPES.save(storage, (contract_id, &index_name), &IndexType::Uint8)?;
         }
-        increment_index_size(storage, &index_name, true)?;
+        incr_decr_index_size(storage, &index_name, true)?;
     } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &index_name))? {
         let index_key = (partition, old_val, contract_id);
         if index.has(storage, index_key) {
             index.remove(storage, index_key);
             indexed_value_map.remove(storage, (contract_id, index_name));
             CONTRACT_INDEX_TYPES.remove(storage, (contract_id, &index_name));
-            increment_index_size(storage, &index_name, false)?;
+            incr_decr_index_size(storage, &index_name, false)?;
         }
     }
     Ok(())
@@ -605,14 +557,14 @@ fn update_u16_index(
         if !CONTRACT_INDEX_TYPES.has(storage, (contract_id, &index_name)) {
             CONTRACT_INDEX_TYPES.save(storage, (contract_id, &index_name), &IndexType::Uint16)?;
         }
-        increment_index_size(storage, &index_name, true)?;
+        incr_decr_index_size(storage, &index_name, true)?;
     } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &index_name))? {
         let index_key = (partition, old_val, contract_id);
         if index.has(storage, index_key) {
             index.remove(storage, index_key);
             indexed_value_map.remove(storage, (contract_id, index_name));
             CONTRACT_INDEX_TYPES.remove(storage, (contract_id, &index_name));
-            increment_index_size(storage, &index_name, false)?;
+            incr_decr_index_size(storage, &index_name, false)?;
         }
     }
     Ok(())
@@ -651,14 +603,14 @@ fn update_i32_index(
         if !CONTRACT_INDEX_TYPES.has(storage, (contract_id, &index_name)) {
             CONTRACT_INDEX_TYPES.save(storage, (contract_id, &index_name), &IndexType::Int32)?;
         }
-        increment_index_size(storage, &index_name, true)?;
+        incr_decr_index_size(storage, &index_name, true)?;
     } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &index_name))? {
         let index_key = (partition, old_val, contract_id);
         if index.has(storage, index_key) {
             index.remove(storage, index_key);
             indexed_value_map.remove(storage, (contract_id, index_name));
             CONTRACT_INDEX_TYPES.remove(storage, (contract_id, &index_name));
-            increment_index_size(storage, &index_name, false)?;
+            incr_decr_index_size(storage, &index_name, false)?;
         }
     }
     Ok(())
@@ -697,14 +649,14 @@ fn update_u32_index(
         if !CONTRACT_INDEX_TYPES.has(storage, (contract_id, &index_name)) {
             CONTRACT_INDEX_TYPES.save(storage, (contract_id, &index_name), &IndexType::Uint32)?;
         }
-        increment_index_size(storage, &index_name, true)?;
+        incr_decr_index_size(storage, &index_name, true)?;
     } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &index_name))? {
         let index_key = (partition, old_val, contract_id);
         if index.has(storage, index_key) {
             index.remove(storage, index_key);
             indexed_value_map.remove(storage, (contract_id, index_name));
             CONTRACT_INDEX_TYPES.remove(storage, (contract_id, &index_name));
-            increment_index_size(storage, &index_name, false)?;
+            incr_decr_index_size(storage, &index_name, false)?;
         }
     }
     Ok(())
@@ -743,14 +695,14 @@ fn update_u64_index(
         if !CONTRACT_INDEX_TYPES.has(storage, (contract_id, &index_name)) {
             CONTRACT_INDEX_TYPES.save(storage, (contract_id, &index_name), &IndexType::Uint64)?;
         }
-        increment_index_size(storage, &index_name, true)?;
+        incr_decr_index_size(storage, &index_name, true)?;
     } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &index_name))? {
         let index_key = (partition, old_val.u64(), contract_id);
         if index.has(storage, index_key) {
             index.remove(storage, index_key);
             indexed_value_map.remove(storage, (contract_id, index_name));
             CONTRACT_INDEX_TYPES.remove(storage, (contract_id, &index_name));
-            increment_index_size(storage, &index_name, false)?;
+            incr_decr_index_size(storage, &index_name, false)?;
         }
     }
     Ok(())
@@ -791,14 +743,14 @@ fn update_u128_index(
         if !CONTRACT_INDEX_TYPES.has(storage, (contract_id, &index_name)) {
             CONTRACT_INDEX_TYPES.save(storage, (contract_id, &index_name), &IndexType::Uint128)?;
         }
-        increment_index_size(storage, &index_name, true)?;
+        incr_decr_index_size(storage, &index_name, true)?;
     } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &index_name))? {
         let index_key = (partition, old_val.u128(), contract_id);
         if index.has(storage, index_key) {
             index.remove(storage, index_key);
             indexed_value_map.remove(storage, (contract_id, index_name));
             CONTRACT_INDEX_TYPES.remove(storage, (contract_id, &index_name));
-            increment_index_size(storage, &index_name, false)?;
+            incr_decr_index_size(storage, &index_name, false)?;
         }
     }
     Ok(())
@@ -839,14 +791,14 @@ fn update_binary_index(
         if !CONTRACT_INDEX_TYPES.has(storage, (contract_id, &index_name)) {
             CONTRACT_INDEX_TYPES.save(storage, (contract_id, &index_name), &IndexType::Uint128)?;
         }
-        increment_index_size(storage, &index_name, true)?;
+        incr_decr_index_size(storage, &index_name, true)?;
     } else if let Some(old_val) = indexed_value_map.may_load(storage, (contract_id, &index_name))? {
         let index_key = (partition, old_val.as_slice(), contract_id);
         if index.has(storage, index_key) {
             index.remove(storage, index_key);
             indexed_value_map.remove(storage, (contract_id, index_name));
             CONTRACT_INDEX_TYPES.remove(storage, (contract_id, &index_name));
-            increment_index_size(storage, &index_name, false)?;
+            incr_decr_index_size(storage, &index_name, false)?;
         }
     }
     Ok(())

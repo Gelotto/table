@@ -386,7 +386,6 @@ pub struct RelationshipUpdates {
 pub struct Config {
     pub owner: Owner,
     pub code_id_allowlist_enabled: bool,
-    pub case_sensitive_indices: bool,
     pub max_str_len: u16,
 }
 
@@ -481,6 +480,7 @@ pub struct AddressesQueryParams {
 #[cw_serde]
 pub struct TagQueryParams {
     pub tag: String,
+    pub exact: Option<bool>,
     pub cursor: Option<Uint64>,
     pub desc: Option<bool>,
     pub limit: Option<u32>,
@@ -508,7 +508,6 @@ pub struct TableGroupsQueryParams {
     pub cursor: Option<Vec<String>>,
     pub desc: Option<bool>,
     pub limit: Option<u32>,
-    pub partition: PartitionID,
 }
 
 #[cw_serde]
@@ -532,7 +531,7 @@ pub enum RelationshipSide {
 #[cw_serde]
 pub struct RelationshipQueryParams {
     pub address: Addr,
-    pub relationship: Option<String>,
+    pub name: Option<Target>,
     pub cursor: Option<(String, String)>,
     pub desc: Option<bool>,
     pub limit: Option<u32>,
@@ -553,7 +552,7 @@ pub struct IndexCreationParams {
 }
 
 #[cw_serde]
-pub enum IndexQueryParams {
+pub enum Target {
     Equals(String),
     Between(Range),
 }
@@ -562,7 +561,7 @@ pub enum IndexQueryParams {
 pub struct RangeQueryParams {
     pub index: RangeSelector,
     pub partition: PartitionID,
-    pub params: IndexQueryParams,
+    pub params: Target,
     pub desc: Option<bool>,
     pub limit: Option<u32>,
     pub cursor: Option<Cursor>,

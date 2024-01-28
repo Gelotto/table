@@ -12,6 +12,7 @@ pub fn with_tag(
     deps: Deps,
     params: TagQueryParams,
 ) -> Result<ContractsByTagResponse, ContractError> {
+    // let exact = params.exact.unwrap_or(true);
     let limit = params.limit.unwrap_or(20).clamp(1, 100) as usize;
     let desc = params.desc.unwrap_or(false);
     let order = if desc {
@@ -35,7 +36,7 @@ pub fn with_tag(
     };
 
     let max_str_len = CONFIG_STR_MAX_LEN.load(deps.storage)? as usize;
-    let cannonical_tag = pad(&params.tag, max_str_len).to_lowercase();
+    let cannonical_tag = pad(&params.tag, max_str_len);
 
     // Collect contract ids, cursor and add them to push them on return vals
     let mut contract_ids: Vec<u64> = Vec::with_capacity(4);

@@ -7,17 +7,11 @@ use crate::msg::{
     MigrateMsg, QueryMsg, TableQueryMsg,
 };
 use crate::query;
-use crate::state::{
-    self, load_reply_job, CustomIndexMap, CONFIG_STR_CASE_SENSITIVE, CONFIG_STR_MAX_LEN,
-    CONTRACT_ID_2_ADDR, CONTRACT_TAGS, CONTRACT_USES_LIFECYCLE_HOOKS, IX_TAG, PARTITION_TAG_COUNTS,
-    REL_ADDR_2_ID, REL_ID_2_ADDR, X,
-};
-use crate::util::{build_index_storage_key, pad};
+use crate::state::{self, load_reply_job};
 use cosmwasm_std::{
-    entry_point, to_json_binary, Binary, Deps, DepsMut, Env, MessageInfo, Order, Reply, Response,
+    entry_point, to_json_binary, Binary, Deps, DepsMut, Env, MessageInfo, Reply, Response,
 };
 use cw2::set_contract_version;
-use cw_storage_plus::Map;
 
 const CONTRACT_NAME: &str = "crates.io:cw-table";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -153,112 +147,8 @@ pub fn query(
 pub fn migrate(
     deps: DepsMut,
     _env: Env,
-    msg: MigrateMsg,
+    _msg: MigrateMsg,
 ) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-
-    match msg {
-        MigrateMsg::V0_0_3 {
-            string_indices,
-            use_lifecycle_hooks,
-        } => {
-            // Set all existing contract's lifecycle toggles to true
-            if use_lifecycle_hooks {
-                for id in CONTRACT_ID_2_ADDR
-                    .keys(deps.storage, None, None, Order::Ascending)
-                    .map(|k| k.unwrap())
-                    .collect::<Vec<u64>>()
-                {
-                    CONTRACT_USES_LIFECYCLE_HOOKS.save(deps.storage, id, &true)?;
-                }
-            }
-
-            CONFIG_STR_CASE_SENSITIVE.save(deps.storage, &false)?;
-
-            // Max len of string index values:
-            let max_len: usize = 128;
-
-            // Pad all existing string index values
-            for index_name in string_indices.iter() {
-                let storage_key = build_index_storage_key(index_name);
-                let map: CustomIndexMap<&String> = Map::new(&storage_key);
-                let old_keys: Vec<(u32, String, u64)> = map
-                    .keys(deps.storage, None, None, Order::Ascending)
-                    .map(|r| r.unwrap())
-                    .collect();
-                map.clear(deps.storage);
-                for (a, b, c) in old_keys.iter() {
-                    let padded_str = pad(b, max_len).to_lowercase();
-                    map.save(deps.storage, (*a, &padded_str, *c), &X)?;
-                }
-            }
-
-            // Set default index string max length
-            if !CONFIG_STR_MAX_LEN.exists(deps.storage) {
-                CONFIG_STR_MAX_LEN.save(deps.storage, &(max_len as u16))?;
-            }
-
-            // TODO: Pad tags
-            let ix_tag_entries: Vec<_> = IX_TAG
-                .range(deps.storage, None, None, Order::Ascending)
-                .map(|k| k.unwrap())
-                .collect();
-
-            IX_TAG.clear(deps.storage);
-            for ((a, b, c), v) in ix_tag_entries.iter() {
-                IX_TAG.save(deps.storage, (*a, &pad(b, max_len), *c), v)?;
-            }
-
-            let tag_count_entries: Vec<_> = PARTITION_TAG_COUNTS
-                .range(deps.storage, None, None, Order::Ascending)
-                .map(|k| k.unwrap())
-                .collect();
-
-            PARTITION_TAG_COUNTS.clear(deps.storage);
-            for ((p, tag), v) in tag_count_entries.iter() {
-                PARTITION_TAG_COUNTS.save(deps.storage, (*p, &pad(tag, max_len)), &v)?;
-            }
-
-            let contract_tag_keys: Vec<_> = CONTRACT_TAGS
-                .keys(deps.storage, None, None, Order::Ascending)
-                .map(|k| k.unwrap())
-                .collect();
-
-            CONTRACT_TAGS.clear(deps.storage);
-            for (p, tag) in contract_tag_keys.iter() {
-                CONTRACT_TAGS.save(deps.storage, (*p, pad(tag, max_len)), &X)?;
-            }
-
-            // TODO: Pad relationship names
-            {
-                let entries: Vec<_> = REL_ADDR_2_ID
-                    .range(deps.storage, None, None, Order::Ascending)
-                    .map(|k| k.unwrap())
-                    .collect();
-                REL_ADDR_2_ID.clear(deps.storage);
-                for ((addr_str, name, id_str), v) in entries.iter() {
-                    REL_ADDR_2_ID.save(
-                        deps.storage,
-                        (addr_str.clone(), pad(name, max_len), id_str.clone()),
-                        v,
-                    )?;
-                }
-            }
-            {
-                let entries: Vec<_> = REL_ID_2_ADDR
-                    .range(deps.storage, None, None, Order::Ascending)
-                    .map(|k| k.unwrap())
-                    .collect();
-                REL_ID_2_ADDR.clear(deps.storage);
-                for ((id, name, addr_str), v) in entries.iter() {
-                    REL_ID_2_ADDR.save(
-                        deps.storage,
-                        (*id, pad(name, max_len), addr_str.clone()),
-                        v,
-                    )?;
-                }
-            }
-        },
-    }
     Ok(Response::default())
 }

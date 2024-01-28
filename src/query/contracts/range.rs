@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-use crate::msg::{ContractsRangeResponse, Cursor, IndexQueryParams, RangeSelector};
+use crate::msg::{ContractsRangeResponse, Cursor, RangeSelector, Target};
 use crate::state::{
     load_contract_records, ContractID, CustomIndexMap, PartitionID, IX_CODE_ID, IX_CONTRACT_ID,
     IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_UPDATED_AT, IX_UPDATED_BY,
@@ -21,10 +21,10 @@ pub fn range(
 
     // Find matching contract ID's
     let (ids, cursor) = match query.params.clone() {
-        IndexQueryParams::Equals(value) => {
+        Target::Equals(value) => {
             get_contract_ids(deps.api, deps.storage, query, Some(value), None, true)
         },
-        IndexQueryParams::Between(range) => get_contract_ids(
+        Target::Between(range) => get_contract_ids(
             deps.api,
             deps.storage,
             query,

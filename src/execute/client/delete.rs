@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use cosmwasm_std::{to_json_binary, Addr, Order, Response, StdResult, Storage, Uint64, WasmMsg};
-use cw_storage_plus::{Bound, Deque};
+use cw_storage_plus::{Bound, Deque, Map};
 
 use crate::{
     context::Context,
@@ -10,14 +10,16 @@ use crate::{
     models::ContractFlag,
     msg::IndexType,
     state::{
-        ensure_allowed_by_acl, ensure_contract_not_suspended, load_contract_id, remove_from_group,
-        ContractID, CONTRACT_ADDR_2_ID, CONTRACT_DYN_METADATA, CONTRACT_GROUP_IDS,
-        CONTRACT_ID_2_ADDR, CONTRACT_INDEX_TYPES, CONTRACT_METADATA, CONTRACT_SUSPENSIONS,
-        CONTRACT_TAGS, CONTRACT_USES_LIFECYCLE_HOOKS, IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT,
-        IX_CREATED_BY, IX_REV, IX_TAG, IX_UPDATED_AT, IX_UPDATED_BY, PARTITION_SIZES,
-        PARTITION_TAG_COUNTS, REL_ADDR_2_ID, REL_ID_2_ADDR, VALUES_BINARY, VALUES_BOOL, VALUES_I32,
-        VALUES_STRING, VALUES_TIME, VALUES_U128, VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8,
+        ensure_allowed_by_acl, ensure_contract_not_suspended, incr_decr_index_size,
+        load_contract_id, remove_from_group, ContractID, CustomIndexMap, CONTRACT_ADDR_2_ID,
+        CONTRACT_DYN_METADATA, CONTRACT_GROUP_IDS, CONTRACT_ID_2_ADDR, CONTRACT_INDEX_TYPES,
+        CONTRACT_METADATA, CONTRACT_SUSPENSIONS, CONTRACT_TAGS, CONTRACT_USES_LIFECYCLE_HOOKS,
+        IX_CODE_ID, IX_CONTRACT_ID, IX_CREATED_AT, IX_CREATED_BY, IX_REV, IX_TAG, IX_UPDATED_AT,
+        IX_UPDATED_BY, PARTITION_SIZES, PARTITION_TAG_COUNTS, REL_ADDR_2_ID, REL_ID_2_ADDR,
+        VALUES_BINARY, VALUES_BOOL, VALUES_I32, VALUES_STRING, VALUES_TIME, VALUES_U128,
+        VALUES_U16, VALUES_U32, VALUES_U64, VALUES_U8,
     },
+    util::build_index_storage_key,
 };
 
 // Replace the existing config in its entirety.
@@ -142,20 +144,29 @@ fn delete_from_tags(
         IX_TAG.remove(storage, (p, &tag, id));
 
         // Decrement the global counts for each tag removed (in the contract's current partition)
-        PARTITION_TAG_COUNTS.update(storage, (p, &tag), |maybe_n| -> Result<_, ContractError> {
-            if let Some(n) = maybe_n {
-                n.checked_sub(1).ok_or(ContractError::UnexpectedError {
-                    reason: format!("cannot subtract from invalid 0 count for tag '{}'", tag),
-                })
-            } else {
-                Err(ContractError::UnexpectedError {
-                    reason: format!(
-                        "cannot subtract non-existent tag count for '{}' in partition {}",
-                        tag, p
-                    ),
-                })
-            }
-        })?;
+        let updated_tag_count = PARTITION_TAG_COUNTS.update(
+            storage,
+            (p, &tag),
+            |maybe_n| -> Result<_, ContractError> {
+                if let Some(n) = maybe_n {
+                    n.checked_sub(1).ok_or(ContractError::UnexpectedError {
+                        reason: format!("cannot subtract from invalid 0 count for tag '{}'", tag),
+                    })
+                } else {
+                    Err(ContractError::UnexpectedError {
+                        reason: format!(
+                            "cannot subtract non-existent tag count for '{}' in partition {}",
+                            tag, p
+                        ),
+                    })
+                }
+            },
+        )?;
+
+        // Remove the partition's tag counter for this tag if count drops to 0.
+        if updated_tag_count == 0 {
+            PARTITION_TAG_COUNTS.remove(storage, (p, &tag));
+        }
     }
 
     Ok(())
@@ -191,17 +202,81 @@ fn delete_from_indices(
 
         CONTRACT_INDEX_TYPES.remove(storage, (id, &index_name));
 
+        incr_decr_index_size(storage, &index_name, false)?;
+
+        let index_storage_key = build_index_storage_key(&index_name);
+
         match index_type {
-            IndexType::String => VALUES_STRING.remove(storage, (id, &index_name)),
-            IndexType::Bool => VALUES_BOOL.remove(storage, (id, &index_name)),
-            IndexType::Timestamp => VALUES_TIME.remove(storage, (id, &index_name)),
-            IndexType::Int32 => VALUES_I32.remove(storage, (id, &index_name)),
-            IndexType::Uint8 => VALUES_U8.remove(storage, (id, &index_name)),
-            IndexType::Uint16 => VALUES_U16.remove(storage, (id, &index_name)),
-            IndexType::Uint32 => VALUES_U32.remove(storage, (id, &index_name)),
-            IndexType::Uint64 => VALUES_U64.remove(storage, (id, &index_name)),
-            IndexType::Uint128 => VALUES_U128.remove(storage, (id, &index_name)),
-            IndexType::Binary => VALUES_BINARY.remove(storage, (id, &index_name)),
+            IndexType::String => {
+                if let Some(v) = VALUES_STRING.may_load(storage, (id, &index_name))? {
+                    VALUES_STRING.remove(storage, (id, &index_name));
+                    let index: CustomIndexMap<&String> = Map::new(&index_storage_key);
+                    index.remove(storage, (p, &v, id));
+                }
+            },
+            IndexType::Bool => {
+                if let Some(v) = VALUES_BOOL.may_load(storage, (id, &index_name))? {
+                    VALUES_BOOL.remove(storage, (id, &index_name));
+                    let index: CustomIndexMap<u8> = Map::new(&index_storage_key);
+                    index.remove(storage, (p, if v { 1 } else { 0 }, id));
+                }
+            },
+            IndexType::Timestamp => {
+                if let Some(v) = VALUES_TIME.may_load(storage, (id, &index_name))? {
+                    VALUES_TIME.remove(storage, (id, &index_name));
+                    let index: CustomIndexMap<u64> = Map::new(&index_storage_key);
+                    index.remove(storage, (p, v.nanos(), id));
+                }
+            },
+            IndexType::Int32 => {
+                if let Some(v) = VALUES_I32.may_load(storage, (id, &index_name))? {
+                    VALUES_I32.remove(storage, (id, &index_name));
+                    let index: CustomIndexMap<i32> = Map::new(&index_storage_key);
+                    index.remove(storage, (p, v, id));
+                }
+            },
+            IndexType::Uint8 => {
+                if let Some(v) = VALUES_U8.may_load(storage, (id, &index_name))? {
+                    VALUES_U8.remove(storage, (id, &index_name));
+                    let index: CustomIndexMap<u8> = Map::new(&index_storage_key);
+                    index.remove(storage, (p, v, id));
+                }
+            },
+            IndexType::Uint16 => {
+                if let Some(v) = VALUES_U16.may_load(storage, (id, &index_name))? {
+                    VALUES_U16.remove(storage, (id, &index_name));
+                    let index: CustomIndexMap<u16> = Map::new(&index_storage_key);
+                    index.remove(storage, (p, v, id));
+                }
+            },
+            IndexType::Uint32 => {
+                if let Some(v) = VALUES_U32.may_load(storage, (id, &index_name))? {
+                    VALUES_U32.remove(storage, (id, &index_name));
+                    let index: CustomIndexMap<u32> = Map::new(&index_storage_key);
+                    index.remove(storage, (p, v, id));
+                }
+            },
+            IndexType::Uint64 => {
+                if let Some(v) = VALUES_U64.may_load(storage, (id, &index_name))? {
+                    VALUES_U64.remove(storage, (id, &index_name));
+                    let index: CustomIndexMap<u64> = Map::new(&index_storage_key);
+                    index.remove(storage, (p, v.u64(), id));
+                }
+            },
+            IndexType::Uint128 => {
+                if let Some(v) = VALUES_U128.may_load(storage, (id, &index_name))? {
+                    VALUES_U128.remove(storage, (id, &index_name));
+                    let index: CustomIndexMap<u128> = Map::new(&index_storage_key);
+                    index.remove(storage, (p, v.u128(), id));
+                }
+            },
+            IndexType::Binary => {
+                if let Some(v) = VALUES_BINARY.may_load(storage, (id, &index_name))? {
+                    VALUES_BINARY.remove(storage, (id, &index_name));
+                    let index: CustomIndexMap<&[u8]> = Map::new(&index_storage_key);
+                    index.remove(storage, (p, &v.as_slice(), id));
+                }
+            },
         }
     }
 

@@ -33,7 +33,6 @@ pub const CONFIG_OWNER: Item<Owner> = Item::new("owner");
 pub const CONFIG_CODE_ID_ALLOWLIST_ENABLED: Item<bool> = Item::new("code_id_allowlist_enabled");
 pub const CONFIG_BACKUP: Item<Binary> = Item::new("config_backup");
 pub const CONFIG_STR_MAX_LEN: Item<u16> = Item::new("config_indexed_str_max_len");
-pub const CONFIG_STR_CASE_SENSITIVE: Item<bool> = Item::new("config_indexed_str_case_sensitive");
 
 // Top-level metadata describing what this cw-table is and contains.
 pub const TABLE_INFO: Item<TableInfo> = Item::new("table_info");
@@ -148,7 +147,6 @@ pub fn initialize(
     CONFIG_OWNER.save(deps.storage, &msg.config.owner)?;
     CONFIG_CODE_ID_ALLOWLIST_ENABLED.save(deps.storage, &msg.config.code_id_allowlist_enabled)?;
     CONFIG_STR_MAX_LEN.save(deps.storage, &msg.config.max_str_len)?;
-    CONFIG_STR_CASE_SENSITIVE.save(deps.storage, &msg.config.case_sensitive_indices)?;
 
     CONTRACT_ID_COUNTER.save(deps.storage, &Uint64::zero())?;
     REPLY_JOB_ID_COUNTER.save(deps.storage, &Uint64::zero())?;
@@ -346,7 +344,6 @@ pub fn load_config(storage: &dyn Storage) -> Result<Config, ContractError> {
         owner: CONFIG_OWNER.load(storage)?,
         code_id_allowlist_enabled: CONFIG_CODE_ID_ALLOWLIST_ENABLED.load(storage)?,
         max_str_len: CONFIG_STR_MAX_LEN.load(storage)?,
-        case_sensitive_indices: CONFIG_STR_CASE_SENSITIVE.load(storage)?,
     })
 }
 
@@ -697,4 +694,38 @@ pub fn exists_contract_address(
     addr: &Addr,
 ) -> bool {
     CONTRACT_ADDR_2_ID.has(storage, addr)
+}
+
+pub fn incr_decr_index_size(
+    storage: &mut dyn Storage,
+    index_name: &String,
+    is_positive: bool,
+) -> Result<(), ContractError> {
+    INDEX_METADATA.update(
+        storage,
+        index_name.clone(),
+        |maybe_meta| -> Result<_, ContractError> {
+            if let Some(mut meta) = maybe_meta {
+                if is_positive {
+                    meta.size = meta.size.checked_add(Uint64::one()).map_err(|_| {
+                        ContractError::UnexpectedError {
+                            reason: format!("Overflow incrementing index {} size", index_name),
+                        }
+                    })?;
+                } else {
+                    meta.size = meta.size.checked_sub(Uint64::one()).map_err(|_| {
+                        ContractError::UnexpectedError {
+                            reason: format!("Overflow subtracting index {} size", index_name),
+                        }
+                    })?;
+                }
+                Ok(meta)
+            } else {
+                Err(ContractError::UnexpectedError {
+                    reason: format!("Index {} not found", index_name),
+                })
+            }
+        },
+    )?;
+    Ok(())
 }
